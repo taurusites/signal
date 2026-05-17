@@ -107,16 +107,17 @@ export function Aquarium({
   );
   const kelpPositions = useMemo(() => [6, 22, 78, 92], []);
 
+  // Tap-to-feed. Uses onClick only — onClick is a stationary-tap gesture in
+  // browsers, which means a horizontal swipe (handled by the parent Pager's
+  // drag) won't trigger this. Don't add onTouchEnd here or every swipe-end
+  // becomes a feed event.
   const handleTankClick = useCallback(
-    (e: React.MouseEvent | React.TouchEvent) => {
+    (e: React.MouseEvent) => {
       if (!miniGameEnabled) return;
       const container = containerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      // Get x from either mouse or touch.
-      const point = 'touches' in e ? e.touches[0] ?? e.changedTouches[0] : e;
-      if (!point) return;
-      const xPx = point.clientX - rect.left;
+      const xPx = e.clientX - rect.left;
       const xPct = (xPx / rect.width) * 100;
       if (xPct < 2 || xPct > 98) return;
       setFood((f) =>
@@ -184,7 +185,6 @@ export function Aquarium({
     <div
       ref={containerRef}
       onClick={handleTankClick}
-      onTouchEnd={handleTankClick}
       style={{
         position: 'absolute',
         inset: 0,
