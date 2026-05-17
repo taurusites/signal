@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
+import { runJson } from './ui/json';
 import { runStatus } from './ui/status';
 
 const program = new Command();
@@ -11,6 +12,13 @@ program
   .action(async () => {
     const code = await runStatus();
     process.exit(code);
+  });
+
+program
+  .command('json')
+  .description('Machine-readable usage + hardware snapshot')
+  .action(async () => {
+    await runJson();
   });
 
 program.parse();
