@@ -45,7 +45,10 @@
       "Bash(sudo -n /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp \"$\\(pwd\\)/dist/signal\")",
       "Bash(nohup ./dist/signal serve)",
       "Bash(open \"x-apple.systempreferences:com.apple.preference.security?Firewall\")",
-      "Bash(open \"/System/Library/PreferencePanes/Security.prefPane\")"
+      "Bash(open \"/System/Library/PreferencePanes/Security.prefPane\")",
+      "Bash(xargs -I{} cat assets/svg-animations/{})",
+      "Bash(mkdir -p web/public/clawd)",
+      "Bash(cp /tmp/clawd-tank/assets/svg-animations/*.svg web/public/clawd/)"
     ]
   }
 }

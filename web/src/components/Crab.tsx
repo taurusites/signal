@@ -1,270 +1,121 @@
-import { type Variants, motion, useAnimationControls } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import type { CrabMood } from '../lib/types';
 
-// Animated pixel-art crab. SVG rect grid stays crisp at any zoom and lets us
-// react to mood + tap without sprite sheets. Tap to make the crab wave, jump,
-// spin, or dance — one reaction picked at random per press.
+// Pixel-art crab powered by Marcio Granzotto's hand-tuned CSS-keyframe SVG
+// animations from https://github.com/marciogranzotto/clawd-tank (MIT).
+// Each SVG is self-contained — referenced via <img>, the embedded CSS
+// keyframes drive the animation. We just pick which SVG to show.
 
 interface Props {
   mood: CrabMood;
-  scale?: number;
+  scale?: number; // arbitrary multiplier on a 96px base size
   onTap?: () => void;
+  /** When true, render the disconnected pose regardless of mood. */
+  disconnected?: boolean;
 }
 
-const MOOD_PALETTE: Record<CrabMood, { body: string; light: string; dark: string }> = {
-  chill: { body: '#3bc6d6', light: '#65d6f5', dark: '#2b88a0' },
-  focused: { body: '#d6c93b', light: '#f5e565', dark: '#a0972b' },
-  cooking: { body: '#d6713b', light: '#f59465', dark: '#a04f2b' },
-  burning: { body: '#d63b3b', light: '#ff6565', dark: '#a02b2b' },
+// Default-state animations, one per mood.
+const MOOD_SVG: Record<CrabMood, string> = {
+  chill: '/clawd/clawd-idle-living.svg',
+  focused: '/clawd/clawd-working-typing.svg',
+  cooking: '/clawd/clawd-working-builder.svg',
+  burning: '/clawd/clawd-working-overheated.svg',
 };
 
-const FACES: Record<
-  CrabMood,
-  {
-    eyes: Array<{ x: number; y: number; c: string }>;
-    mouth: { x: number; y: number; w: number; h: number };
-  }
-> = {
-  chill: {
-    eyes: [
-      { x: 12, y: 12, c: '#fff' },
-      { x: 13, y: 13, c: '#0a0d18' },
-      { x: 18, y: 12, c: '#fff' },
-      { x: 19, y: 13, c: '#0a0d18' },
-    ],
-    mouth: { x: 14, y: 16, w: 4, h: 1 },
-  },
-  focused: {
-    eyes: [
-      { x: 12, y: 12, c: '#fff' },
-      { x: 13, y: 12, c: '#0a0d18' },
-      { x: 18, y: 12, c: '#fff' },
-      { x: 19, y: 12, c: '#0a0d18' },
-    ],
-    mouth: { x: 13, y: 16, w: 6, h: 1 },
-  },
-  cooking: {
-    eyes: [
-      { x: 12, y: 12, c: '#ffd700' },
-      { x: 13, y: 13, c: '#0a0d18' },
-      { x: 18, y: 12, c: '#ffd700' },
-      { x: 19, y: 13, c: '#0a0d18' },
-    ],
-    mouth: { x: 13, y: 15, w: 6, h: 2 },
-  },
-  burning: {
-    eyes: [
-      { x: 12, y: 12, c: '#ff5a6e' },
-      { x: 13, y: 13, c: '#fff' },
-      { x: 18, y: 12, c: '#ff5a6e' },
-      { x: 19, y: 13, c: '#fff' },
-    ],
-    mouth: { x: 13, y: 15, w: 6, h: 2 },
-  },
-};
+// Tap reactions — pool we pick from each press. Each reaction plays once
+// for REACTION_MS ms, then we revert to mood.
+const REACTIONS = [
+  '/clawd/clawd-happy.svg',
+  '/clawd/clawd-eureka.svg',
+  '/clawd/clawd-grooving.svg',
+  '/clawd/clawd-hat-mishap.svg',
+  '/clawd/clawd-dizzy.svg',
+  '/clawd/clawd-working-juggling.svg',
+] as const;
 
-const LEGS_FRAMES = [
-  [
-    { x: 8, y: 18, h: 2 },
-    { x: 12, y: 18, h: 2 },
-    { x: 18, y: 18, h: 2 },
-    { x: 22, y: 18, h: 2 },
-    { x: 7, y: 20, h: 2 },
-    { x: 11, y: 20, h: 2 },
-    { x: 19, y: 20, h: 2 },
-    { x: 23, y: 20, h: 2 },
-  ],
-  [
-    { x: 8, y: 18, h: 3 },
-    { x: 12, y: 19, h: 2 },
-    { x: 18, y: 19, h: 2 },
-    { x: 22, y: 18, h: 3 },
-    { x: 7, y: 21, h: 1 },
-    { x: 11, y: 21, h: 1 },
-    { x: 19, y: 21, h: 1 },
-    { x: 23, y: 21, h: 1 },
-  ],
-];
+const REACTION_MS = 3200;
 
-type Reaction = 'wave' | 'jump' | 'spin' | 'dance' | 'surprise';
+export function Crab({ mood, scale = 6, onTap, disconnected = false }: Props): JSX.Element {
+  const [reaction, setReaction] = useState<string | null>(null);
 
-const REACTIONS: Reaction[] = ['wave', 'jump', 'spin', 'dance', 'surprise'];
-
-const REACTION_VARIANTS: Record<Reaction, Variants> = {
-  wave: {
-    play: { rotate: [0, -12, 8, -10, 6, 0], transition: { duration: 0.9, ease: 'easeInOut' } },
-  },
-  jump: {
-    play: {
-      y: [0, -40, 0, -16, 0],
-      scaleY: [1, 1.05, 0.95, 1.02, 1],
-      transition: { duration: 0.8, ease: 'easeOut' },
-    },
-  },
-  spin: {
-    play: { rotate: [0, 360], transition: { duration: 0.8, ease: 'easeInOut' } },
-  },
-  dance: {
-    play: {
-      x: [0, -10, 12, -10, 12, -8, 8, 0],
-      rotate: [0, -5, 5, -5, 5, -3, 3, 0],
-      transition: { duration: 1.4, ease: 'easeInOut' },
-    },
-  },
-  surprise: {
-    play: {
-      scale: [1, 1.18, 1.0, 1.06, 1],
-      y: [0, -8, 0, -4, 0],
-      transition: { duration: 0.7, ease: 'easeOut' },
-    },
-  },
-};
-
-interface CrabSvgProps {
-  mood: CrabMood;
-  frame: number;
-  blinking: boolean;
-  surprised: boolean;
-}
-
-function CrabSvg({ mood, frame, blinking, surprised }: CrabSvgProps): JSX.Element {
-  const p = MOOD_PALETTE[mood];
-  const f = FACES[mood];
-  const legs = LEGS_FRAMES[frame % LEGS_FRAMES.length] ?? LEGS_FRAMES[0] ?? [];
-  return (
-    <svg
-      viewBox="0 0 32 32"
-      shapeRendering="crispEdges"
-      style={{ width: '100%', height: '100%', imageRendering: 'pixelated' }}
-    >
-      <rect x="8" y="10" width="16" height="8" fill={p.body} />
-      <rect x="6" y="12" width="2" height="4" fill={p.body} />
-      <rect x="24" y="12" width="2" height="4" fill={p.body} />
-      <rect x="10" y="8" width="12" height="2" fill={p.body} />
-      <rect x="10" y="10" width="2" height="2" fill={p.light} />
-      <rect x="20" y="10" width="2" height="2" fill={p.light} />
-
-      <g transform={`translate(0 ${frame === 1 ? -0.5 : 0})`}>
-        <rect x="2" y="14" width="4" height="2" fill={p.body} />
-        <rect x="0" y="12" width="2" height="2" fill={p.body} />
-        <rect x="0" y="16" width="2" height="2" fill={p.body} />
-      </g>
-      <g transform={`translate(0 ${frame === 0 ? -0.5 : 0})`}>
-        <rect x="26" y="14" width="4" height="2" fill={p.body} />
-        <rect x="30" y="12" width="2" height="2" fill={p.body} />
-        <rect x="30" y="16" width="2" height="2" fill={p.body} />
-      </g>
-
-      {/* eyes */}
-      {blinking ? (
-        <>
-          <rect x="12" y="13" width="2" height="1" fill={p.dark} />
-          <rect x="18" y="13" width="2" height="1" fill={p.dark} />
-        </>
-      ) : surprised ? (
-        <>
-          {/* surprised: bigger whites + tiny pupils */}
-          <rect x="11" y="11" width="4" height="4" fill="#fff" />
-          <rect x="17" y="11" width="4" height="4" fill="#fff" />
-          <rect x="13" y="13" width="1" height="1" fill="#0a0d18" />
-          <rect x="19" y="13" width="1" height="1" fill="#0a0d18" />
-        </>
-      ) : (
-        f.eyes.map((e, i) => <rect key={i} x={e.x} y={e.y} width="1" height="1" fill={e.c} />)
-      )}
-
-      <rect
-        x={surprised ? 14 : f.mouth.x}
-        y={surprised ? 16 : f.mouth.y}
-        width={surprised ? 4 : f.mouth.w}
-        height={surprised ? 3 : f.mouth.h}
-        fill="#0a0d18"
-        rx={surprised ? 1 : 0}
-      />
-
-      {legs.map((l, i) => (
-        <rect
-          key={`leg${i}`}
-          x={l.x}
-          y={l.y}
-          width="2"
-          height={l.h}
-          fill={i < 4 ? p.body : p.dark}
-        />
-      ))}
-    </svg>
-  );
-}
-
-export function Crab({ mood, scale = 6, onTap }: Props): JSX.Element {
-  const reactionControls = useAnimationControls();
-  const [reaction, setReaction] = useState<Reaction | null>(null);
-  const [surprised, setSurprised] = useState(false);
-  const [frame, setFrame] = useState(0);
-  const [blinking, setBlinking] = useState(false);
-
-  // Walk cycle + blink loop.
   useEffect(() => {
-    const walkMs =
-      mood === 'burning' ? 180 : mood === 'cooking' ? 280 : mood === 'focused' ? 420 : 720;
-    const w = setInterval(() => setFrame((f) => 1 - f), walkMs);
-    const b = setInterval(
-      () => {
-        setBlinking(true);
-        setTimeout(() => setBlinking(false), 140);
-      },
-      3000 + Math.random() * 3000,
-    );
-    return () => {
-      clearInterval(w);
-      clearInterval(b);
-    };
-  }, [mood]);
+    if (!reaction) return;
+    const t = setTimeout(() => setReaction(null), REACTION_MS);
+    return () => clearTimeout(t);
+  }, [reaction]);
 
-  async function trigger(): Promise<void> {
-    const pick = REACTIONS[Math.floor(Math.random() * REACTIONS.length)] ?? 'jump';
-    setReaction(pick);
-    setSurprised(pick === 'surprise');
+  const trigger = (): void => {
     onTap?.();
-    try {
-      await reactionControls.start('play');
-    } catch {
-      /* interrupted */
-    }
-    setSurprised(false);
-    setReaction(null);
-  }
+    const pick = REACTIONS[Math.floor(Math.random() * REACTIONS.length)] ?? REACTIONS[0];
+    setReaction(pick);
+  };
+
+  // Size: 32 grid units × scale (legacy from the rect-svg version). Clawd
+  // viewBoxes are ~45 units so we widen the wrapper proportionally.
+  const size = 32 * scale;
+  const src = disconnected
+    ? '/clawd/clawd-disconnected.svg'
+    : (reaction ?? MOOD_SVG[mood]);
 
   return (
     <motion.button
       type="button"
-      aria-label={`tap crab — currently ${mood}`}
-      onClick={() => void trigger()}
+      aria-label={`tap crab — currently ${mood}${reaction ? ' (reacting)' : ''}`}
+      onClick={trigger}
       onPointerDown={(e) => e.stopPropagation()}
+      whileTap={{ scale: 0.94 }}
       style={{
-        width: 32 * scale,
-        height: 32 * scale,
+        width: size,
+        height: size,
         position: 'relative',
-        imageRendering: 'pixelated',
         background: 'transparent',
         border: 0,
         padding: 0,
         cursor: 'pointer',
         touchAction: 'manipulation',
+        imageRendering: 'pixelated',
+        // The SVGs already have their own intrinsic animation loops; an
+        // outer breathing wrapper would conflict, so we leave the wrapper
+        // static and let the inner SVG drive everything.
       }}
-      whileTap={{ scale: 0.92 }}
-      animate={reactionControls}
-      variants={reaction ? REACTION_VARIANTS[reaction] : undefined}
     >
-      {/* breathing bob runs continuously underneath the reaction */}
-      <motion.div
-        style={{ width: '100%', height: '100%' }}
-        animate={{ y: [0, -3, 0] }}
-        transition={{ duration: 2.4, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
-      >
-        <CrabSvg mood={mood} frame={frame} blinking={blinking} surprised={surprised} />
-      </motion.div>
+      <AnimatePresence mode="popLayout">
+        <motion.img
+          key={src}
+          src={src}
+          alt=""
+          draggable={false}
+          initial={{ opacity: 0, scale: 0.92 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.96 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain',
+            // Filter shifts let us hint mood without re-coloring every SVG.
+            filter: moodFilter(mood, !!reaction),
+            pointerEvents: 'none',
+          }}
+        />
+      </AnimatePresence>
     </motion.button>
   );
+}
+
+// Subtle hue/saturation shift per mood so the crab visually warms with
+// intensity. Reactions get a tiny saturation boost to feel zippier.
+function moodFilter(mood: CrabMood, reacting: boolean): string {
+  const base =
+    mood === 'chill'
+      ? 'hue-rotate(0deg) saturate(0.95)'
+      : mood === 'focused'
+        ? 'hue-rotate(10deg) saturate(1.05)'
+        : mood === 'cooking'
+          ? 'hue-rotate(-15deg) saturate(1.15)'
+          : 'hue-rotate(-30deg) saturate(1.25) brightness(1.05)';
+  return reacting ? `${base} saturate(1.25) brightness(1.05)` : base;
 }

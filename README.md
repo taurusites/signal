@@ -56,6 +56,12 @@ useSystemInformation = true
 useOauth = false   # set true (or run `signal auth claude`) for exact % utilization
 ```
 
+## Credits
+
+The animated pixel-art crab in the web tank (`web/public/clawd/*.svg`) is from
+[clawd-tank](https://github.com/marciogranzotto/clawd-tank) by Marcio Granzotto
+Rodrigues, used under the MIT License. See `web/public/clawd/NOTICE.md`.
+
 ## Status
 
 **v1.0 — Claude + hardware, zero-config.** Source MIT. Issues and PRs welcome at github.com/shandar/signal.
