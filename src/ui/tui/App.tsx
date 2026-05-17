@@ -1,3 +1,6 @@
+import { existsSync, watch } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { Box, Text, useApp, useInput } from 'ink';
 // biome-ignore lint/style/useImportType: classic JSX transform requires React as a value
 import React, { useEffect, useState } from 'react';
@@ -59,9 +62,33 @@ export function App({
       }
     };
     void loop();
+
+    // Watch ~/.claude/projects for new JSONL writes — fires the scheduler
+    // immediately on Claude activity instead of waiting for the next 5s tick.
+    // Debounced 250ms because one Claude turn can produce several fs events.
+    const claudeProjects = join(homedir(), '.claude', 'projects');
+    let watcher: ReturnType<typeof watch> | null = null;
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    if (existsSync(claudeProjects)) {
+      try {
+        watcher = watch(claudeProjects, { recursive: true }, (_event, filename) => {
+          if (!filename || !filename.toString().endsWith('.jsonl')) return;
+          if (debounce) clearTimeout(debounce);
+          debounce = setTimeout(() => {
+            void scheduler.runOnce().then(() => setTick((t) => t + 1));
+          }, 250);
+        });
+      } catch {
+        // Recursive watch not supported on some platforms — TUI still works
+        // off the 5s poll cadence. Acceptable degradation.
+      }
+    }
+
     return () => {
       cancelled = true;
       scheduler.stop();
+      if (debounce) clearTimeout(debounce);
+      watcher?.close();
     };
   }, [scheduler, store, sampleIntervalMs, useSystemInformation]);
 

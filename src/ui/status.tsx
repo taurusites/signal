@@ -65,7 +65,7 @@ export async function runStatus(): Promise<number> {
   const cfg = loadConfig();
   const store = new EventStore(cfg.dbPath);
   const registry = new ProviderRegistry();
-  const allAdapters: ProviderAdapter[] = [new ClaudeAdapter()];
+  const allAdapters: ProviderAdapter[] = [new ClaudeAdapter({ useOauth: cfg.claude.useOauth })];
   for (const a of allAdapters) if (cfg.enabledProviders.includes(a.id)) registry.register(a);
   const sched = new PollScheduler(store);
   for (const a of registry.list()) sched.add(a);

@@ -2,10 +2,11 @@ import { Box, Text, render } from 'ink';
 import React from 'react';
 import { ClaudeAdapter } from '../adapters/claude';
 import { HardwareSampler } from '../core/HardwareSampler';
-import { configPath } from '../core/config';
+import { configPath, loadConfig } from '../core/config';
 
 export async function runDoctor(): Promise<number> {
-  const claude = new ClaudeAdapter();
+  const cfg = loadConfig();
+  const claude = new ClaudeAdapter({ useOauth: cfg.claude.useOauth });
   const detected = await claude.detect();
   const auth = await claude.authStatus();
   let hwOk = false;
@@ -21,6 +22,7 @@ export async function runDoctor(): Promise<number> {
   }
 
   const remediation = auth.kind === 'needs_auth' ? ` — ${auth.remediation}` : '';
+  const mode = cfg.claude.useOauth ? 'OAuth (exact %)' : 'JSONL (tokens, no keychain access)';
 
   const { unmount } = render(
     <Box flexDirection="column" borderStyle="single">
@@ -34,15 +36,22 @@ export async function runDoctor(): Promise<number> {
       </Box>
       <Box paddingX={1}>
         <Text>
-          Claude detected: <Text color={detected ? 'green' : 'red'}>{detected ? 'yes' : 'no'}</Text>
+          Claude mode: <Text color="cyan">{mode}</Text>
         </Text>
       </Box>
       <Box paddingX={1}>
         <Text>
-          Claude auth: <Text color={auth.kind === 'ok' ? 'green' : 'yellow'}>{auth.kind}</Text>
-          {remediation}
+          Claude detected: <Text color={detected ? 'green' : 'red'}>{detected ? 'yes' : 'no'}</Text>
         </Text>
       </Box>
+      {cfg.claude.useOauth ? (
+        <Box paddingX={1}>
+          <Text>
+            Claude auth: <Text color={auth.kind === 'ok' ? 'green' : 'yellow'}>{auth.kind}</Text>
+            {remediation}
+          </Text>
+        </Box>
+      ) : null}
       <Box paddingX={1}>
         <Text>
           hardware: <Text color={hwOk ? 'green' : 'red'}>{hwOk ? 'ok' : 'fail'}</Text> — {hwNote}
@@ -51,5 +60,7 @@ export async function runDoctor(): Promise<number> {
     </Box>,
   );
   unmount();
-  return detected && auth.kind === 'ok' && hwOk ? 0 : 1;
+  // In JSONL-only mode, OAuth auth status is irrelevant.
+  const authOk = cfg.claude.useOauth ? auth.kind === 'ok' : true;
+  return detected && authOk && hwOk ? 0 : 1;
 }

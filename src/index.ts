@@ -7,7 +7,8 @@ import { ClaudeAdapter } from './adapters/claude';
 import { EventStore } from './core/EventStore';
 import { PollScheduler } from './core/PollScheduler';
 import { ProviderRegistry } from './core/ProviderRegistry';
-import { configPath, loadConfig, writeDefaultConfig } from './core/config';
+import { configPath, loadConfig, setClaudeUseOauth, writeDefaultConfig } from './core/config';
+import { runAuthClaude } from './ui/authClaude';
 import { runDoctor } from './ui/doctor';
 import { runJson } from './ui/json';
 import { runStatus } from './ui/status';
@@ -48,6 +49,27 @@ program
     execFileSync(editor, [configPath()], { stdio: 'inherit' });
   });
 
+const auth = program
+  .command('auth')
+  .description('Opt-in extras (the default JSONL path needs no auth setup)');
+
+auth
+  .command('claude')
+  .description('Walkthrough to enable Claude OAuth for exact % utilization')
+  .action(async () => {
+    const code = await runAuthClaude();
+    setClaudeUseOauth(true);
+    process.exit(code);
+  });
+
+auth
+  .command('claude-disable')
+  .description('Disable Claude OAuth and fall back to JSONL-only (no keychain access)')
+  .action(() => {
+    setClaudeUseOauth(false);
+    console.log('Claude OAuth disabled. signal will read JSONL only.');
+  });
+
 program
   .command('tui', { isDefault: true })
   .description('Live TUI (default)')
@@ -56,7 +78,7 @@ program
     const cfg = loadConfig();
     const store = new EventStore(cfg.dbPath);
     const registry = new ProviderRegistry();
-    const all = [new ClaudeAdapter()];
+    const all = [new ClaudeAdapter({ useOauth: cfg.claude.useOauth })];
     for (const a of all) if (cfg.enabledProviders.includes(a.id)) registry.register(a);
     const sched = new PollScheduler(store);
     for (const a of registry.list()) sched.add(a);

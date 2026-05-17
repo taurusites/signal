@@ -10,12 +10,21 @@ export interface SignalConfig {
     sampleIntervalMs: number;
     useSystemInformation: boolean;
   };
+  claude: {
+    // Default: false. Reading Claude's keychain entry requires a macOS
+    // Keychain Access ACL grant per binary, which is hostile UX. JSONL gives
+    // us tokens / models / projects / sessions — only the exact 5h
+    // utilization% and reset timer require OAuth. Run `signal auth claude`
+    // to opt in.
+    useOauth: boolean;
+  };
   dbPath: string;
 }
 
 const DEFAULTS: SignalConfig = {
   enabledProviders: ['claude'],
   hardware: { sampleIntervalMs: 2000, useSystemInformation: true },
+  claude: { useOauth: false },
   dbPath: join(homedir(), '.signal', 'events.db'),
 };
 
@@ -37,6 +46,7 @@ export function loadConfig(): SignalConfig {
       ...DEFAULTS,
       ...parsed,
       hardware: { ...DEFAULTS.hardware, ...(parsed.hardware ?? {}) },
+      claude: { ...DEFAULTS.claude, ...(parsed.claude ?? {}) },
     };
   } catch {
     return DEFAULTS;
@@ -48,4 +58,11 @@ export function writeDefaultConfig(): void {
   if (!existsSync(configPath())) {
     writeFileSync(configPath(), stringifyToml(DEFAULTS), 'utf-8');
   }
+}
+
+export function setClaudeUseOauth(value: boolean): void {
+  const current = loadConfig();
+  const next: SignalConfig = { ...current, claude: { ...current.claude, useOauth: value } };
+  mkdirSync(configDir(), { recursive: true });
+  writeFileSync(configPath(), stringifyToml(next), 'utf-8');
 }
