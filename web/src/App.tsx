@@ -81,6 +81,7 @@ export function App(): JSX.Element {
         autonomousXPct={autonomousX}
         onCrabTap={cycleMood}
         miniGameEnabled={settings.miniGameEnabled}
+        soundsEnabled={settings.soundsEnabled}
       />
       {isMobile ? (
         <DataPanelMobile

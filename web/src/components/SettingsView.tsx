@@ -137,6 +137,9 @@ export function SettingsView({ settings, onChange }: Props): JSX.Element {
         <Row label="mini-game" hint="tap the water to drop food; crab walks over and eats it">
           <Toggle value={local.miniGameEnabled} onChange={(v) => update({ miniGameEnabled: v })} />
         </Row>
+        <Row label="sounds" hint="subtle footsteps, splash when food drops, sparkle when crab eats">
+          <Toggle value={local.soundsEnabled} onChange={(v) => update({ soundsEnabled: v })} />
+        </Row>
 
         <div style={{ fontSize: 11, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 18 }}>
           danger zone

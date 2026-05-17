@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { playFootstep, playSparkle, playSplash, unlockAudio } from '../lib/sounds';
 import type { CrabMood } from '../lib/types';
 import { Crab } from './Crab';
 
@@ -75,17 +76,21 @@ interface Props {
   autonomousXPct: number;
   onCrabTap?: () => void;
   miniGameEnabled?: boolean;
+  soundsEnabled?: boolean;
   onFoodEaten?: () => void;
 }
 
 const FLOOR_OFFSET_PX = 18; // crab's bottom offset
-const CRAB_HALF_WIDTH_PCT = 6;
+// Tight contact distance — the crab must visually arrive at the food
+// before eating, so the threshold is roughly one pixel-art tile.
+const EAT_DISTANCE_PCT = 1.2;
 
 export function Aquarium({
   mood,
   autonomousXPct,
   onCrabTap,
   miniGameEnabled = true,
+  soundsEnabled = true,
   onFoodEaten,
 }: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -113,6 +118,8 @@ export function Aquarium({
   // becomes a feed event.
   const handleTankClick = useCallback(
     (e: React.MouseEvent) => {
+      // Any tap unlocks the audio context on mobile (no-op after first time).
+      unlockAudio();
       if (!miniGameEnabled) return;
       const container = containerRef.current;
       if (!container) return;
@@ -126,12 +133,14 @@ export function Aquarium({
           { id: `food-${Date.now()}-${Math.random()}`, xPct, spawnedAt: Date.now(), landed: false },
         ].slice(-12),
       );
+      if (soundsEnabled) playSplash();
     },
-    [miniGameEnabled],
+    [miniGameEnabled, soundsEnabled],
   );
 
-  // Crab AI: every tick, walk toward the nearest landed food. If none,
-  // ease back to the autonomous sine position.
+  // Crab AI: every tick, walk toward the nearest landed food. If none, ease
+  // back to the autonomous sine position. Stop motion when within
+  // EAT_DISTANCE_PCT of the target so the crab visually arrives.
   useEffect(() => {
     const id = setInterval(() => {
       setCrabXPct((current) => {
@@ -143,25 +152,44 @@ export function Aquarium({
         const target = nearest ? nearest.xPct : autonomousXPct;
         const speed = nearest ? (mood === 'burning' ? 2.4 : 1.4) : 0.4;
         const diff = target - current;
-        if (Math.abs(diff) < 0.5) return current;
-        const step = Math.sign(diff) * Math.min(speed, Math.abs(diff));
-        const next = current + step;
-
-        // Check eat collision.
-        if (nearest && Math.abs(next - nearest.xPct) < CRAB_HALF_WIDTH_PCT) {
-          // Eat it.
+        // Eat when we're physically on top of the food.
+        if (nearest && Math.abs(diff) < EAT_DISTANCE_PCT) {
           setFood((f) => f.filter((p) => p.id !== nearest.id));
-          setSparkles((s) =>
-            [...s, { id: `spark-${Date.now()}`, xPct: nearest.xPct }].slice(-6),
-          );
+          setSparkles((s) => [...s, { id: `spark-${Date.now()}`, xPct: nearest.xPct }].slice(-6));
           setScore((sc) => sc + 1);
+          if (soundsEnabled) playSparkle();
           onFoodEaten?.();
+          return nearest.xPct; // settle exactly on the food's spot
         }
-        return next;
+        if (Math.abs(diff) < 0.2) return current;
+        const step = Math.sign(diff) * Math.min(speed, Math.abs(diff));
+        return current + step;
       });
     }, 60);
     return () => clearInterval(id);
-  }, [food, autonomousXPct, mood, onFoodEaten]);
+  }, [food, autonomousXPct, mood, soundsEnabled, onFoodEaten]);
+
+  // Footstep audio. Plays a soft tap while the crab is actually moving;
+  // step rate follows the mood walk speed. A small movement threshold
+  // (0.25%) prevents ticks when the crab is just settling on a target.
+  const crabXRef = useRef(crabXPct);
+  useEffect(() => {
+    crabXRef.current = crabXPct;
+  }, [crabXPct]);
+  useEffect(() => {
+    if (!soundsEnabled) return;
+    const stepMs =
+      mood === 'burning' ? 200 : mood === 'cooking' ? 300 : mood === 'focused' ? 420 : 720;
+    let lastX = crabXRef.current;
+    const id = setInterval(() => {
+      const x = crabXRef.current;
+      if (Math.abs(x - lastX) > 0.25) {
+        playFootstep();
+      }
+      lastX = x;
+    }, stepMs);
+    return () => clearInterval(id);
+  }, [mood, soundsEnabled]);
 
   // Mark food as landed once their fall animation should be done (~600ms).
   useEffect(() => {

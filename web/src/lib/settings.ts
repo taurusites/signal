@@ -11,6 +11,9 @@ export interface UserSettings {
   // Toast & mini-game toggles.
   toastsEnabled: boolean;
   miniGameEnabled: boolean;
+  // Crab footstep + chime sounds. Mobile Safari needs a user gesture to
+  // unlock the audio context the first time, which we handle on any tap.
+  soundsEnabled: boolean;
   // Daemon URL — empty string means "same origin as the page" which is
   // what you want when served by the daemon itself; only override when
   // running the Vite dev server against a non-default daemon port.
@@ -22,6 +25,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   moodThresholds: { focused: 500_000, cooking: 5_000_000, burning: 20_000_000 },
   toastsEnabled: true,
   miniGameEnabled: true,
+  soundsEnabled: true,
   daemonOverride: '',
 };
 

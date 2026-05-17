@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import { unlockAudio } from '../lib/sounds';
 import type { CrabMood } from '../lib/types';
 
 // Pixel-art crab powered by Marcio Granzotto's hand-tuned CSS-keyframe SVG
@@ -46,6 +47,7 @@ export function Crab({ mood, scale = 6, onTap, disconnected = false }: Props): J
   }, [reaction]);
 
   const trigger = (): void => {
+    unlockAudio();
     onTap?.();
     const pick = REACTIONS[Math.floor(Math.random() * REACTIONS.length)] ?? REACTIONS[0];
     setReaction(pick);
