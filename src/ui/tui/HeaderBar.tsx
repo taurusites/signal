@@ -1,45 +1,51 @@
 import { Box, Text } from 'ink';
-// biome-ignore lint/style/useImportType: classic JSX transform requires React as a value
-import React from 'react';
+import type React from 'react';
 import type { HwSample } from '../../core/types';
 import { bar, severityColor } from './theme';
 
 interface Props {
-  combinedUtil: number | null;
   hw: HwSample | null;
 }
 
-export function HeaderBar({ combinedUtil, hw }: Props): React.ReactElement {
+// Tiny identity glyph — block art that suggests a sine wave / signal.
+const GLYPH = '▟▙';
+
+export function HeaderBar({ hw }: Props): React.ReactElement {
   const memPct = hw ? (hw.memUsedBytes / hw.memTotalBytes) * 100 : null;
-  const gpuLine = hw && typeof hw.gpuPct === 'number' ? `gpu ${hw.gpuPct.toFixed(0)}%` : '';
+  const gpu = hw && typeof hw.gpuPct === 'number' ? `${hw.gpuPct.toFixed(0)}%` : null;
   return (
     <Box borderStyle="single" borderColor="white" paddingX={1} flexDirection="row">
-      <Box flexDirection="column" width={40}>
-        <Text bold>signal</Text>
-        <Text>
-          combined{' '}
-          <Text color={severityColor(combinedUtil)}>
-            {bar(combinedUtil)} {combinedUtil === null ? '—' : `${combinedUtil.toFixed(0)}%`}
-          </Text>
+      <Box width={24} flexDirection="column">
+        <Text bold>
+          <Text color="cyan">{GLYPH}</Text> signal
         </Text>
+        <Text dimColor>signal, not noise</Text>
       </Box>
       <Box flexDirection="column" flexGrow={1}>
-        <Text>
-          cpu{'  '}
-          <Text color={severityColor(hw?.cpuPct ?? null)}>
-            {bar(hw?.cpuPct ?? null, 16)} {hw ? `${hw.cpuPct.toFixed(0)}%` : '—'}
-          </Text>
-          {'   load '}
-          {hw ? hw.load1m.toFixed(2) : '—'}
-        </Text>
-        <Text>
-          ram{'  '}
-          <Text color={severityColor(memPct)}>
-            {bar(memPct, 16)} {memPct === null ? '—' : `${memPct.toFixed(0)}%`}
-          </Text>
-          {'   '}
-          {gpuLine}
-        </Text>
+        <Box>
+          <Box width={5}>
+            <Text>cpu</Text>
+          </Box>
+          <Box width={20}>
+            <Text color={severityColor(hw?.cpuPct ?? null)}>{bar(hw?.cpuPct ?? null, 14)}</Text>
+          </Box>
+          <Box width={8}>
+            <Text>{hw ? `${hw.cpuPct.toFixed(0)}%` : '—'}</Text>
+          </Box>
+          <Text dimColor>load {hw ? hw.load1m.toFixed(2) : '—'}</Text>
+        </Box>
+        <Box>
+          <Box width={5}>
+            <Text>ram</Text>
+          </Box>
+          <Box width={20}>
+            <Text color={severityColor(memPct)}>{bar(memPct, 14)}</Text>
+          </Box>
+          <Box width={8}>
+            <Text>{memPct === null ? '—' : `${memPct.toFixed(0)}%`}</Text>
+          </Box>
+          {gpu ? <Text dimColor>gpu {gpu}</Text> : null}
+        </Box>
       </Box>
     </Box>
   );
