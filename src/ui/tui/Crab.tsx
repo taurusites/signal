@@ -2,102 +2,320 @@ import { Box, Text } from 'ink';
 import { useEffect, useRef, useState } from 'react';
 import type { CrabMood } from '../../core/Aggregator';
 
-// Animated ASCII crab — five lines tall, ~11 cols wide.
-// Each mood has 2-3 frames that cycle at a mood-dependent tempo.
-// A quiet auto-twitch loop fires a random reaction every 18-40 s so
-// the crab never reads as frozen.
+// Animated ASCII crab — six lines tall (one particle row + five crab rows),
+// ~14 cols wide. Each mood has 4-5 hand-drawn frames that cycle at a
+// mood-dependent tempo. Frames vary three independent dimensions:
+//   1. horizontal walking (leading whitespace shifts the crab in its lane)
+//   2. body pose (eyes drift, claws bob, mouth squashes)
+//   3. ambient particles above the crab (sparks, heatwaves, bubbles, focus)
 //
-// Terminal-safe characters: ASCII + unicode blocks already in use
-// (▁▂▃▄▅▆▇█ ▟▙ ◔◉◕× ◊ ‿ ‾ C ⊃ ≪ ≫ Ↄ)
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// A quiet auto-twitch loop fires a random reaction every 18-40 s so the
+// crab never reads as frozen.
+//
+// Terminal-safe characters only:
+//   ASCII + ▁▂▃▄▅▆▇█ ▟▙ ◔◉◕× ◊ ‿ ‾ ~ * . o C ⊃ ≪ Ↄ
+//
+// Strings use template literals (backticks) because the legs row contains
+// apostrophes that would otherwise terminate single-quoted strings.
 
 type Reaction = 'wave' | 'jump' | 'dance' | 'spin';
 
-// Each frame is exactly 5 lines of text.
-type Frame = readonly [string, string, string, string, string];
-
-// ---------------------------------------------------------------------------
-// Mood frames
-// ---------------------------------------------------------------------------
-// Frame layout:
-//   line 0 — antennae
-//   line 1 — shell top + eyes
-//   line 2 — claws + mouth
-//   line 3 — under-shell
-//   line 4 — legs
+// Six-line frame: row 0 is the ambient-particle row above the crab; rows
+// 1-5 are the crab itself (antennae, shell+eyes, claws+mouth, under-shell,
+// legs).
+type Frame = readonly [string, string, string, string, string, string];
 
 const MOOD_FRAMES: Record<CrabMood, readonly Frame[]> = {
-  // chill: gentle breathing, eyes glance left ↔ right
+  // chill: crab drifts left → right, eyes scan, occasional bubble drifts up
   chill: [
-    [' _, _  ', ' /◔ ◔\\ ', 'C\\‿‿/⊃', ' /‾‾\\ ', " '' '' "],
-    [' _, _  ', ' /◔  ◔\\', 'C\\‿‿/⊃', ' /‾‾\\ ', "  ' '' "],
-    [' _, _  ', '/◔   ◔\\', 'C\\‿‿/⊃', ' /‾‾\\ ', " '' '  "],
+    [
+      `  o           `,
+      `   _, _       `,
+      `  /◔ ◔\\      `,
+      ` C\\‿‿/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
+    [
+      `   .          `,
+      `    _, _      `,
+      `   /◔  ◔\\    `,
+      `  C\\‿‿/⊃     `,
+      `   /‾‾\\      `,
+      `    '  ''     `,
+    ],
+    [
+      `         o    `,
+      `     _, _     `,
+      `    /◔  ◔\\   `,
+      `   C\\‿‿/⊃    `,
+      `    /‾‾\\     `,
+      `     '' '     `,
+    ],
+    [
+      `        .  o  `,
+      `    _, _      `,
+      `   /◔ ◔\\     `,
+      `  C\\‿‿/⊃     `,
+      `   /‾‾\\      `,
+      `    '  ''     `,
+    ],
   ],
-  // focused: eyes locked forward, claws alternate bob
+
+  // focused: small jitter, thinking dots above, eyes locked
   focused: [
-    [' _, _  ', ' /◉ ◉\\ ', 'C\\ww/⊃ ', ' /‾‾\\ ', " '  '' "],
-    [' _, _  ', ' /◉ ◉\\ ', 'c\\ww/Ↄ ', ' /‾‾\\ ', " '' '  "],
+    [
+      `       . .    `,
+      `   _, _       `,
+      `  /◉ ◉\\      `,
+      ` C\\ww/⊃      `,
+      `  /‾‾\\       `,
+      `   '  ''      `,
+    ],
+    [
+      `      . . .   `,
+      `   _, _       `,
+      `  /◉ ◉\\      `,
+      ` c\\ww/Ↄ      `,
+      `  /‾‾\\       `,
+      `   ''  '      `,
+    ],
+    [
+      `       . .    `,
+      `    _, _      `,
+      `   /◉ ◉\\     `,
+      `  C\\ww/⊃     `,
+      `   /‾‾\\      `,
+      `    '  ''     `,
+    ],
+    [
+      `      .  .   .`,
+      `    _, _      `,
+      `   /◉ ◉\\     `,
+      `  c\\ww/Ↄ     `,
+      `   /‾‾\\      `,
+      `    ''  '     `,
+    ],
   ],
-  // cooking: claws hammer down, body squashes
+
+  // cooking: sparks above, claws hammer, body squashes
   cooking: [
-    [' _, _  ', ' /◕ ◕\\ ', 'C\\◊◊/⊃ ', ' /‾‾\\ ', " '' '' "],
-    [' _, _  ', ' /◕ ◕\\ ', 'c\\◊◊/Ↄ ', ' /▁▁\\ ', "  '' ' "],
-    [' _, _  ', ' /◕ ◕\\ ', 'C\\◊◊/⊃ ', ' /‾‾\\ ', " ' ''  "],
+    [
+      `    *   . *   `,
+      `   _, _       `,
+      `  /◕ ◕\\      `,
+      ` C\\◊◊/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
+    [
+      `  *  . *  .   `,
+      `   _, _       `,
+      `  /◕ ◕\\      `,
+      ` c\\◊◊/Ↄ      `,
+      `  /▁▁\\       `,
+      `   '  ''      `,
+    ],
+    [
+      `    .  *  *   `,
+      `    _, _      `,
+      `   /◕ ◕\\     `,
+      `  C\\◊◊/⊃     `,
+      `   /‾‾\\      `,
+      `    '' '      `,
+    ],
+    [
+      ` *  .  . *    `,
+      `    _, _      `,
+      `   /◕ ◕\\     `,
+      `  c\\◊◊/Ↄ     `,
+      `   /▁▁\\      `,
+      `    '  ''     `,
+    ],
+    [
+      `   * . *  .   `,
+      `   _, _       `,
+      `  /◕ ◕\\      `,
+      ` C\\◊◊/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
   ],
-  // burning: strained + jittery, body shifts
+
+  // burning: heatwaves above, body shudders, eyes wild
   burning: [
-    [' _ _   ', ' /× ×\\ ', 'C\\MM/⊃ ', ' /‾‾\\ ', " '_'   "],
-    [' _ _   ', ' /× ×\\ ', 'C\\MM/Ↄ ', ' /‾‾\\ ', " '. .' "],
+    [
+      `  ~ ~~  ~ ~   `,
+      `   _ _        `,
+      `  /× ×\\      `,
+      ` C\\MM/⊃      `,
+      `  /‾‾\\       `,
+      `   '_'        `,
+    ],
+    [
+      ` ~~  ~ ~~  ~  `,
+      `    _ _       `,
+      `   /× ×\\     `,
+      `  C\\MM/Ↄ     `,
+      `   /‾‾\\      `,
+      `    '. .'     `,
+    ],
+    [
+      `  ~ ~~  ~~ ~  `,
+      `   _ _        `,
+      `  /× ×\\      `,
+      ` c\\MM/⊃      `,
+      `  /‾‾\\       `,
+      `   '_'        `,
+    ],
+    [
+      ` ~ ~~  ~ ~~   `,
+      `    _ _       `,
+      `   /× ×\\     `,
+      `  C\\MM/Ↄ     `,
+      `   /‾‾\\      `,
+      `    '. .'     `,
+    ],
   ],
 };
-
-// ---------------------------------------------------------------------------
-// Mood tempo (ms per frame)
-// ---------------------------------------------------------------------------
 
 const MOOD_TEMPO: Record<CrabMood, number> = {
   burning: 200,
-  cooking: 300,
-  focused: 420,
-  chill: 700,
+  cooking: 280,
+  focused: 380,
+  chill: 600,
 };
-
-// ---------------------------------------------------------------------------
-// Reaction frames + durations
-// ---------------------------------------------------------------------------
 
 const REACTION_FRAMES: Record<Reaction, readonly Frame[]> = {
-  // wave: left claw lifts (≪ replaces C)
+  // wave: left claw lifts (≪ replaces C) — three-beat hello
   wave: [
-    [' _, _  ', ' /◉ ◉\\ ', '≪\\--/⊃ ', ' /‾‾\\ ', " '' '' "],
-    [' _, _  ', ' /◉ ◉\\ ', 'C\\ww/⊃ ', ' /‾‾\\ ', " '' '' "],
-    [' _, _  ', ' /◉ ◉\\ ', '≪\\--/⊃ ', ' /‾‾\\ ', " '' '' "],
+    [
+      `              `,
+      `   _, _       `,
+      `  /◉ ◉\\      `,
+      ` ≪\\--/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
+    [
+      `              `,
+      `   _, _       `,
+      `  /◉ ◉\\      `,
+      ` C\\ww/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
+    [
+      `              `,
+      `   _, _       `,
+      `  /◉ ◉\\      `,
+      ` ≪\\--/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
   ],
-  // jump: body shifts up, top antenna line replaced by blank
+
+  // jump: crab floats up one line then settles
   jump: [
-    ['       ', ' _, _  ', 'C\\◔◔/⊃ ', ' /‾‾\\ ', " '' '' "],
-    [' _, _  ', ' /◔ ◔\\ ', 'C\\‿‿/⊃', ' /‾‾\\ ', '       '],
-    [' _, _  ', ' /◔ ◔\\ ', 'C\\‿‿/⊃', ' /‾‾\\ ', " '' '' "],
+    [
+      `   _, _       `,
+      `  /◔ ◔\\      `,
+      ` C\\‿‿/⊃      `,
+      `  /‾‾\\       `,
+      `              `,
+      `              `,
+    ],
+    [
+      `              `,
+      `   _, _       `,
+      `  /◔ ◔\\      `,
+      ` C\\‿‿/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
+    [
+      `              `,
+      `   _, _       `,
+      `  /◔ ◔\\      `,
+      ` C\\‿‿/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
   ],
-  // dance: body sways left then right
+
+  // dance: sways left ↔ right
   dance: [
-    [' _, _  ', '/◉ ◉\\  ', 'C\\ww/⊃ ', ' /‾‾\\ ', "  ' '' "],
-    [' _, _  ', '  /◉ ◉\\', ' c\\ww/Ↄ', '  /‾‾\\', " ''  ' "],
-    [' _, _  ', '/◉ ◉\\  ', 'C\\ww/⊃ ', ' /‾‾\\ ', "  ' '' "],
+    [
+      `              `,
+      ` _, _         `,
+      `/◉ ◉\\        `,
+      `C\\ww/⊃       `,
+      ` /‾‾\\        `,
+      `  ' ''        `,
+    ],
+    [
+      `              `,
+      `     _, _     `,
+      `    /◉ ◉\\    `,
+      `   c\\ww/Ↄ    `,
+      `    /‾‾\\     `,
+      `     ''  '    `,
+    ],
+    [
+      `              `,
+      ` _, _         `,
+      `/◉ ◉\\        `,
+      `C\\ww/⊃       `,
+      ` /‾‾\\        `,
+      `  ' ''        `,
+    ],
+    [
+      `              `,
+      `     _, _     `,
+      `    /◉ ◉\\    `,
+      `   c\\ww/Ↄ    `,
+      `    /‾‾\\     `,
+      `     ''  '    `,
+    ],
   ],
-  // spin: eyes cycle through *, o, ◉
+
+  // spin: eyes cycle through *, o, ◉ — stars trail above
   spin: [
-    [' _, _  ', ' /* *\\ ', 'C\\--/⊃ ', ' /‾‾\\ ', " '' '' "],
-    [' _, _  ', ' /o o\\ ', 'C\\--/⊃ ', ' /‾‾\\ ', " '' '' "],
-    [' _, _  ', ' /◉ ◉\\ ', 'C\\--/⊃ ', ' /‾‾\\ ', " '' '' "],
-    [' _, _  ', ' /o o\\ ', 'C\\--/⊃ ', ' /‾‾\\ ', " '' '' "],
+    [
+      `   . .   .    `,
+      `   _, _       `,
+      `  /* *\\      `,
+      ` C\\--/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
+    [
+      `  .  . .      `,
+      `   _, _       `,
+      `  /o o\\      `,
+      ` C\\--/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
+    [
+      `    .    . .  `,
+      `   _, _       `,
+      `  /◉ ◉\\      `,
+      ` C\\--/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
+    [
+      ` . .  .       `,
+      `   _, _       `,
+      `  /o o\\      `,
+      ` C\\--/⊃      `,
+      `  /‾‾\\       `,
+      `   '' ''      `,
+    ],
   ],
 };
 
-// How long (ms) each reaction plays before returning to mood loop
 const REACTION_DURATION: Record<Reaction, number> = {
   wave: 900,
   jump: 600,
@@ -107,23 +325,17 @@ const REACTION_DURATION: Record<Reaction, number> = {
 
 const REACTIONS: readonly Reaction[] = ['wave', 'jump', 'dance', 'spin'];
 
-// ---------------------------------------------------------------------------
-// Mood color + caption
-// ---------------------------------------------------------------------------
+type CrabColor = 'green' | 'yellow' | 'magenta' | 'red';
 
 const MOOD_META: Record<
   CrabMood,
-  { color: 'green' | 'yellow' | 'magenta' | 'red'; caption: string }
+  { color: CrabColor; particleColor: CrabColor | 'cyan'; caption: string }
 > = {
-  chill: { color: 'green', caption: 'chillin' },
-  focused: { color: 'yellow', caption: 'focused' },
-  cooking: { color: 'magenta', caption: 'cooking' },
-  burning: { color: 'red', caption: 'on fire' },
+  chill: { color: 'green', particleColor: 'cyan', caption: 'chillin' },
+  focused: { color: 'yellow', particleColor: 'yellow', caption: 'focused' },
+  cooking: { color: 'magenta', particleColor: 'yellow', caption: 'cooking' },
+  burning: { color: 'red', particleColor: 'red', caption: 'on fire' },
 };
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 interface Props {
   mood: CrabMood;
@@ -133,11 +345,9 @@ export function Crab({ mood }: Props): JSX.Element {
   const [frameIdx, setFrameIdx] = useState(0);
   const [activeReaction, setActiveReaction] = useState<Reaction | null>(null);
 
-  // Ref so the twitch loop always sees current reaction state
   const reactionRef = useRef<Reaction | null>(null);
   reactionRef.current = activeReaction;
 
-  // Advance frame at mood tempo
   useEffect(() => {
     const tempo = MOOD_TEMPO[mood];
     const id = setInterval(() => {
@@ -146,15 +356,12 @@ export function Crab({ mood }: Props): JSX.Element {
     return () => clearInterval(id);
   }, [mood]);
 
-  // Auto-twitch loop: pick a random reaction every 18-40 s
   useEffect(() => {
     let twitchId: ReturnType<typeof setTimeout>;
-
     const schedule = (): void => {
-      const delay = 18_000 + Math.random() * 22_000; // 18-40 s
+      const delay = 18_000 + Math.random() * 22_000;
       twitchId = setTimeout(() => {
         if (reactionRef.current !== null) {
-          // already reacting — skip this tick and reschedule
           schedule();
           return;
         }
@@ -168,29 +375,23 @@ export function Crab({ mood }: Props): JSX.Element {
         }, REACTION_DURATION[reaction]);
       }, delay);
     };
-
     schedule();
     return () => clearTimeout(twitchId);
   }, []);
 
   const meta = MOOD_META[mood];
-
-  // Resolve current frame
-  let frames: readonly Frame[];
-  if (activeReaction !== null) {
-    frames = REACTION_FRAMES[activeReaction];
-  } else {
-    frames = MOOD_FRAMES[mood];
-  }
+  const frames: readonly Frame[] =
+    activeReaction !== null ? REACTION_FRAMES[activeReaction] : MOOD_FRAMES[mood];
   const frame = frames[frameIdx % frames.length] as Frame;
 
   return (
     <Box flexDirection="column">
-      <Text color={meta.color}>{frame[0]}</Text>
+      <Text color={meta.particleColor}>{frame[0]}</Text>
       <Text color={meta.color}>{frame[1]}</Text>
       <Text color={meta.color}>{frame[2]}</Text>
       <Text color={meta.color}>{frame[3]}</Text>
-      <Text dimColor>{frame[4]}</Text>
+      <Text color={meta.color}>{frame[4]}</Text>
+      <Text dimColor>{frame[5]}</Text>
       <Text dimColor>{` ${meta.caption}`}</Text>
     </Box>
   );
