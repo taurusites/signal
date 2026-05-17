@@ -66,7 +66,7 @@ export function App({
   }, [scheduler, store, sampleIntervalMs, useSystemInformation]);
 
   const rows = adapters.map((a) => {
-    const events = store.latestEvents(a.id, 20);
+    const events = store.latestEvents(a.id, 200);
     const points = events
       .map((e) => {
         const raw = e.raw as OauthRaw | undefined;
@@ -82,6 +82,18 @@ export function App({
       .map((p) => p.utilization)
       .reverse();
     const state = store.getProviderState(a.id);
+    // JSONL-source token tally for when OAuth is unavailable. Sums unique events
+    // by (sessionId, ts) — the same JSONL line can appear in multiple polls.
+    const seen = new Set<string>();
+    let tokensWindow = 0;
+    const sinceMs = Date.now() - 5 * 3600_000;
+    for (const e of events) {
+      if (e.ts.getTime() < sinceMs) continue;
+      const key = `${e.sessionId ?? ''}|${e.ts.getTime()}|${e.inputTokens}|${e.outputTokens}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      tokensWindow += e.inputTokens + e.outputTokens + e.cacheCreationTokens + e.cacheReadTokens;
+    }
     return {
       id: a.id,
       name: a.displayName,
@@ -89,6 +101,7 @@ export function App({
       burn,
       etaMs: eta,
       sparkline,
+      tokensWindow,
       lastError: state?.lastError ?? null,
     };
   });
@@ -109,6 +122,7 @@ export function App({
             burn={r.burn}
             etaMs={r.etaMs}
             sparkline={r.sparkline}
+            tokensWindow={r.tokensWindow}
             lastError={r.lastError}
           />
         ))}

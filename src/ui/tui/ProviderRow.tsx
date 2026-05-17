@@ -10,6 +10,7 @@ interface Props {
   burn: number | null;
   etaMs: number | null;
   sparkline: number[];
+  tokensWindow: number;
   lastError: string | null;
 }
 
@@ -22,23 +23,36 @@ function spark(points: number[]): string {
     .join('');
 }
 
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
 export function ProviderRow({
   name,
   util,
   burn,
   etaMs,
   sparkline,
+  tokensWindow,
   lastError,
 }: Props): React.ReactElement {
+  // When OAuth utilization isn't available (no keychain access, expired token, etc.)
+  // fall back to showing JSONL token tally — at least the user sees activity.
+  const utilCell =
+    util === null
+      ? tokensWindow > 0
+        ? `${formatTokens(tokensWindow)} tok (5h)`
+        : '—'
+      : `${bar(util, 18)} ${util.toFixed(0)}%`;
   return (
     <Box paddingX={1}>
       <Box width={14}>
         <Text>{name}</Text>
       </Box>
-      <Box width={26}>
-        <Text color={severityColor(util)}>
-          {bar(util, 18)} {util === null ? '—' : `${util.toFixed(0)}%`}
-        </Text>
+      <Box width={28}>
+        <Text color={severityColor(util)}>{utilCell}</Text>
       </Box>
       <Box width={14}>
         <Text dimColor>{spark(sparkline)}</Text>
