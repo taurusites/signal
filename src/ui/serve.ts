@@ -93,9 +93,18 @@ export async function runServe(opts: ServeOptions = {}): Promise<void> {
     const summary = claude ? aggregateClaude(store.latestEvents(claude.id, 500)) : null;
     const hw = await sampler.sample();
     store.appendHwSample(hw);
+    // Normalize all timestamps to ms-epoch numbers for wire transport. Date
+    // objects auto-serialize to ISO strings, which the web client expects to
+    // be numbers for `Date.now() - r.ts` math.
+    const claudeWire = summary
+      ? {
+          ...summary,
+          recent: summary.recent.map((r) => ({ ...r, ts: r.ts.getTime() })),
+        }
+      : null;
     return JSON.stringify({
-      generatedAt: new Date().toISOString(),
-      claude: summary,
+      generatedAt: Date.now(),
+      claude: claudeWire,
       hardware: {
         cpuPct: hw.cpuPct,
         cpuPerCore: hw.cpuPerCore,

@@ -33,9 +33,9 @@ function Bubble({ left, delay, duration, size }: BubbleProps): JSX.Element {
       transition={{
         duration,
         delay,
-        repeat: Infinity,
+        repeat: Number.POSITIVE_INFINITY,
         ease: 'linear',
-        x: { duration: duration / 2, repeat: Infinity, ease: 'easeInOut', delay },
+        x: { duration: duration / 2, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut', delay },
       }}
     />
   );
@@ -56,7 +56,11 @@ function Kelp({ left }: { left: number }): JSX.Element {
         boxShadow: '0 0 12px rgba(45, 161, 78, 0.3)',
       }}
       animate={{ rotate: [-3, 3, -3] }}
-      transition={{ duration: 4 + Math.random() * 2, repeat: Infinity, ease: 'easeInOut' }}
+      transition={{
+        duration: 4 + Math.random() * 2,
+        repeat: Number.POSITIVE_INFINITY,
+        ease: 'easeInOut',
+      }}
     />
   );
 }
@@ -100,7 +104,7 @@ export function Aquarium({ mood, crabXPct }: Props): JSX.Element {
           mixBlendMode: 'screen',
         }}
         animate={{ opacity: [0.6, 1, 0.7, 1, 0.6] }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+        transition={{ duration: 6, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
       />
 
       {/* Bubbles */}

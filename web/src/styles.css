@@ -22,13 +22,19 @@
   --ok: #6fff8a;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   background: var(--bg-0);
   color: var(--text);
-  font-family: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
   font-size: 14px;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
@@ -37,12 +43,21 @@ html, body, #root {
   image-rendering: crisp-edges;
 }
 
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-img, svg { image-rendering: pixelated; }
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+img,
+svg {
+  image-rendering: pixelated;
+}
 
 /* Scanline overlay across the whole UI — retro CRT feel without being unreadable */
 body::after {
-  content: '';
+  content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
@@ -58,7 +73,7 @@ body::after {
 
 /* Soft vignette on the corners */
 body::before {
-  content: '';
+  content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;

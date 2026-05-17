@@ -18,7 +18,13 @@ const MOOD_PALETTE: Record<CrabMood, { body: string; light: string; dark: string
 };
 
 // Per-pixel eye/mouth definition — quick swappable face per mood.
-const FACES: Record<CrabMood, { eyes: Array<{ x: number; y: number; c: string }>; mouth: { x: number; y: number; w: number; h: number } }> = {
+const FACES: Record<
+  CrabMood,
+  {
+    eyes: Array<{ x: number; y: number; c: string }>;
+    mouth: { x: number; y: number; w: number; h: number };
+  }
+> = {
   chill: {
     eyes: [
       { x: 12, y: 12, c: '#fff' },
@@ -93,7 +99,11 @@ function CrabSvg({ mood, frame, blinking }: CrabSvgProps): JSX.Element {
   const f = FACES[mood];
   const legs = LEGS_FRAMES[frame % LEGS_FRAMES.length] ?? LEGS_FRAMES[0] ?? [];
   return (
-    <svg viewBox="0 0 32 32" shapeRendering="crispEdges" style={{ width: '100%', height: '100%', imageRendering: 'pixelated' }}>
+    <svg
+      viewBox="0 0 32 32"
+      shapeRendering="crispEdges"
+      style={{ width: '100%', height: '100%', imageRendering: 'pixelated' }}
+    >
       {/* shell */}
       <rect x="8" y="10" width="16" height="8" fill={p.body} />
       <rect x="6" y="12" width="2" height="4" fill={p.body} />
@@ -121,9 +131,7 @@ function CrabSvg({ mood, frame, blinking }: CrabSvgProps): JSX.Element {
           <rect x="18" y="13" width="2" height="1" fill={p.dark} />
         </>
       ) : (
-        f.eyes.map((e, i) => (
-          <rect key={i} x={e.x} y={e.y} width="1" height="1" fill={e.c} />
-        ))
+        f.eyes.map((e, i) => <rect key={i} x={e.x} y={e.y} width="1" height="1" fill={e.c} />)
       )}
       {/* second-pixel eye (whites of the eye for non-blink) */}
       {!blinking ? <rect x={13} y={13} width="0" height="0" /> : null}
@@ -133,7 +141,14 @@ function CrabSvg({ mood, frame, blinking }: CrabSvgProps): JSX.Element {
 
       {/* legs */}
       {legs.map((l, i) => (
-        <rect key={`leg${i}`} x={l.x} y={l.y} width="2" height={l.h} fill={i < 4 ? p.body : p.dark} />
+        <rect
+          key={`leg${i}`}
+          x={l.x}
+          y={l.y}
+          width="2"
+          height={l.h}
+          fill={i < 4 ? p.body : p.dark}
+        />
       ))}
     </svg>
   );
@@ -150,7 +165,7 @@ export function Crab({ mood, scale = 6 }: Props): JSX.Element {
         imageRendering: 'pixelated',
       }}
       animate={{ y: [0, -3, 0] }}
-      transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+      transition={{ duration: 2.4, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
     >
       <CrabFrames mood={mood} />
     </motion.div>
@@ -170,7 +185,7 @@ function CrabAnimator({ mood }: { mood: CrabMood }): JSX.Element {
     <motion.div
       style={{ width: '100%', height: '100%' }}
       animate={{ rotate: [0, -1.5, 0, 1.5, 0] }}
-      transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
+      transition={{ duration: 3.6, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
     >
       <CrabTicker mood={mood} />
     </motion.div>
@@ -186,13 +201,17 @@ function CrabTicker({ mood }: { mood: CrabMood }): JSX.Element {
 
   useEffect(() => {
     // Walk cycle: speed depends on mood — burning crabs scuttle.
-    const walkMs = mood === 'burning' ? 180 : mood === 'cooking' ? 280 : mood === 'focused' ? 420 : 720;
+    const walkMs =
+      mood === 'burning' ? 180 : mood === 'cooking' ? 280 : mood === 'focused' ? 420 : 720;
     const w = setInterval(() => setFrame((f) => 1 - f), walkMs);
     // Blink every 3-6s.
-    const b = setInterval(() => {
-      setBlinking(true);
-      setTimeout(() => setBlinking(false), 140);
-    }, 3000 + Math.random() * 3000);
+    const b = setInterval(
+      () => {
+        setBlinking(true);
+        setTimeout(() => setBlinking(false), 140);
+      },
+      3000 + Math.random() * 3000,
+    );
     return () => {
       clearInterval(w);
       clearInterval(b);

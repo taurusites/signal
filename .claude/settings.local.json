@@ -33,7 +33,19 @@
       "Bash(open -a \"Keychain Access\")",
       "Bash(git checkout *)",
       "Bash(mkdir -p web/src/components web/src/lib web/public)",
-      "Bash(bun create *)"
+      "Bash(bun create *)",
+      "Bash(nohup bun run src/index.ts serve)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(open \"http://localhost:8787\")",
+      "Bash(/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate)",
+      "Bash(lsof -nP -iTCP:8787 -sTCP:LISTEN)",
+      "Bash(killall -9 signal)",
+      "Bash(pkill -f \"bun.*src/index.ts\")",
+      "Bash(sudo -n /usr/libexec/ApplicationFirewall/socketfilterfw --add \"$\\(pwd\\)/dist/signal\")",
+      "Bash(sudo -n /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp \"$\\(pwd\\)/dist/signal\")",
+      "Bash(nohup ./dist/signal serve)",
+      "Bash(open \"x-apple.systempreferences:com.apple.preference.security?Firewall\")",
+      "Bash(open \"/System/Library/PreferencePanes/Security.prefPane\")"
     ]
   }
 }
