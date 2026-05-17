@@ -7,3 +7,5 @@ dist/
 tokemon-ref/
 web/dist/
 web/node_modules/
+web/src/**/*.js
+web/tsconfig.tsbuildinfo
