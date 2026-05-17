@@ -9,6 +9,8 @@ Multi-provider usage monitor for AI coding agents. **Signal, not noise.**
 
 `signal` watches your AI usage and host hardware. The v1 terminal TUI is here too — but the headline of v2 is `signal serve`, which spins up a WebSocket daemon and a web tank that any browser on your Wi-Fi can open. Built by [Affordance Design Studio](https://affordance.design). MIT.
 
+![signal web tank — animated clawd crab walking under glass data panels](docs/screenshots/web.png)
+
 ## What's in v2
 
 - **Web tank UI** — animated pixel-art aquarium with [Marcio Granzotto's clawd-tank](https://github.com/marciogranzotto/clawd-tank) crab (MIT). Mood states drive the crab's animation: chill → focused → cooking → on-fire as your 5h token spend climbs.
