@@ -1,0 +1,14 @@
+{
+  "name": "signal — claude tank",
+  "short_name": "signal",
+  "description": "Live Claude Code usage, hardware, and an animated tank crab.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0d18",
+  "theme_color": "#0a0d18",
+  "icons": [
+    { "src": "/crab.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/crab.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

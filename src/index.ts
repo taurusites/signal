@@ -11,6 +11,7 @@ import { configPath, loadConfig, setClaudeUseOauth, writeDefaultConfig } from '.
 import { runAuthClaude } from './ui/authClaude';
 import { runDoctor } from './ui/doctor';
 import { runJson } from './ui/json';
+import { runServe } from './ui/serve';
 import { runStatus } from './ui/status';
 import { App } from './ui/tui/App';
 
@@ -30,6 +31,14 @@ program
   .description('Machine-readable usage + hardware snapshot')
   .action(async () => {
     await runJson();
+  });
+
+program
+  .command('serve')
+  .description('Start the daemon + web tank UI (phone / tablet / browser)')
+  .option('-p, --port <number>', 'HTTP + WebSocket port', '8787')
+  .action(async (opts: { port: string }) => {
+    await runServe({ port: Number.parseInt(opts.port, 10) });
   });
 
 program
