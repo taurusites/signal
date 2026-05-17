@@ -1,62 +1,122 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Aquarium } from './components/Aquarium';
 import { DataPanel } from './components/DataPanel';
-import { moodFromTokens } from './lib/format';
+import { DataPanelMobile } from './components/DataPanelMobile';
+import { Pager } from './components/Pager';
+import { SettingsView } from './components/SettingsView';
+import { StatsView } from './components/StatsView';
+import { Toasts } from './components/Toasts';
+import { formatInr } from './lib/format';
+import { type Currency, loadCurrency, saveCurrency } from './lib/layout';
+import { type UserSettings, loadSettings, moodFromTokensWithSettings } from './lib/settings';
 import type { CrabMood } from './lib/types';
+import { useMediaQuery } from './lib/useMediaQuery';
+import { useNotifications } from './lib/useNotifications';
 import { useSignal } from './lib/useSignal';
 
 const MOODS: CrabMood[] = ['chill', 'focused', 'cooking', 'burning'];
 
 export function App(): JSX.Element {
   const { snapshot, connected, staleMs } = useSignal();
+  const [settings, setSettings] = useState<UserSettings>(loadSettings());
+  const [currency, setCurrency] = useState<Currency>(loadCurrency());
+  const isMobile = useMediaQuery('(max-width: 720px)');
 
-  const [crabXPct, setCrabXPct] = useState(50);
-  const dataMood = snapshot ? moodFromTokens(snapshot.claude.tokensWindow) : 'chill';
-  // Mood override — set by tapping the mood chip, expires after 8s so the
-  // crab snaps back to real data mood.
+  // Toast notifications — only emit if user has them enabled.
+  const { toasts, dismiss } = useNotifications(
+    settings.toastsEnabled ? snapshot : null,
+  );
+
+  // Currency formatter that respects user-tuned FX rate.
+  const formatMoney = useCallback(
+    (rupees: number): string => {
+      if (currency === 'inr') return formatInr(rupees);
+      const rate = settings.usdToInr || 84;
+      const usd = rupees / rate;
+      if (usd < 1) return `$${usd.toFixed(2)}`;
+      if (usd < 1000) return `$${usd.toFixed(2)}`;
+      return `$${usd.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+    },
+    [currency, settings.usdToInr],
+  );
+  const toggleCurrency = (): void => {
+    const next: Currency = currency === 'inr' ? 'usd' : 'inr';
+    setCurrency(next);
+    saveCurrency(next);
+  };
+
+  // Crab mood — data-driven, with thresholds from settings, and a user
+  // override that lasts 8s.
   const [overrideMood, setOverrideMood] = useState<CrabMood | null>(null);
+  const dataMood: CrabMood = snapshot
+    ? moodFromTokensWithSettings(snapshot.claude.tokensWindow, settings.moodThresholds)
+    : 'chill';
   const mood: CrabMood = overrideMood ?? dataMood;
   useEffect(() => {
     if (!overrideMood) return;
     const t = setTimeout(() => setOverrideMood(null), 8000);
     return () => clearTimeout(t);
   }, [overrideMood]);
+  const cycleMood = (): void => {
+    const i = MOODS.indexOf(mood);
+    setOverrideMood(MOODS[(i + 1) % MOODS.length] ?? 'chill');
+  };
 
-  // The crab strolls slowly across the tank; faster when mood escalates.
-  // A tap or override resets the sine to make the response feel immediate.
+  // Autonomous crab x-position (sine drift; faster mood = faster drift).
+  const [autonomousX, setAutonomousX] = useState(50);
   useEffect(() => {
     const speedMs =
-      mood === 'burning'
-        ? 22_000
-        : mood === 'cooking'
-          ? 36_000
-          : mood === 'focused'
-            ? 56_000
-            : 90_000;
+      mood === 'burning' ? 22_000 : mood === 'cooking' ? 36_000 : mood === 'focused' ? 56_000 : 90_000;
     const start = Date.now();
     const id = setInterval(() => {
       const elapsed = (Date.now() - start) / speedMs;
-      const pct = 30 + 40 * (0.5 + 0.5 * Math.sin(elapsed * Math.PI * 2));
-      setCrabXPct(pct);
+      setAutonomousX(30 + 40 * (0.5 + 0.5 * Math.sin(elapsed * Math.PI * 2)));
     }, 80);
     return () => clearInterval(id);
   }, [mood]);
 
-  const cycleMood = (): void => {
-    const i = MOODS.indexOf(mood);
-    const next = MOODS[(i + 1) % MOODS.length] ?? 'chill';
-    setOverrideMood(next);
-  };
+  const tankPage = (
+    <div style={{ position: 'absolute', inset: 0 }}>
+      <Aquarium
+        mood={mood}
+        autonomousXPct={autonomousX}
+        onCrabTap={cycleMood}
+        miniGameEnabled={settings.miniGameEnabled}
+      />
+      {isMobile ? (
+        <DataPanelMobile
+          snapshot={snapshot}
+          connected={connected}
+          staleMs={staleMs}
+          currency={currency}
+          onToggleCurrency={toggleCurrency}
+          onMoodHack={cycleMood}
+          formatMoney={formatMoney}
+        />
+      ) : (
+        <DataPanel
+          snapshot={snapshot}
+          connected={connected}
+          staleMs={staleMs}
+          onMoodHack={cycleMood}
+        />
+      )}
+    </div>
+  );
+
+  const statsPage = <StatsView snapshot={snapshot} />;
+  const settingsPage = <SettingsView settings={settings} onChange={setSettings} />;
 
   return (
-    <div style={{ position: 'fixed', inset: 0 }}>
-      <Aquarium mood={mood} crabXPct={crabXPct} onCrabTap={cycleMood} />
-      <DataPanel
-        snapshot={snapshot}
-        connected={connected}
-        staleMs={staleMs}
-        onMoodHack={cycleMood}
+    <>
+      <Pager
+        pages={[
+          { id: 'tank', label: 'tank', content: tankPage },
+          { id: 'stats', label: 'stats', content: statsPage },
+          { id: 'settings', label: 'settings', content: settingsPage },
+        ]}
       />
-    </div>
+      <Toasts toasts={toasts} onDismiss={dismiss} />
+    </>
   );
 }

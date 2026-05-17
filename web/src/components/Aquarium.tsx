@@ -1,14 +1,14 @@
-import { motion } from 'framer-motion';
-import { useMemo } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CrabMood } from '../lib/types';
 import { Crab } from './Crab';
 
-// The tank: a gradient sky→water column, animated bubbles, kelp swaying,
-// pebble floor, and the crab strolling across it. Purely decorative — all
-// data lives in DataPanel on top.
+// The tank: gradient sky→water column, caustic flicker, bubbles, kelp,
+// pebble floor. The crab walks autonomously by default, but when food
+// pellets are dropped (tap the water) it pursues the nearest one.
 
 interface BubbleProps {
-  left: number; // 0..100 (%)
+  left: number;
   delay: number;
   duration: number;
   size: number;
@@ -56,23 +56,45 @@ function Kelp({ left }: { left: number }): JSX.Element {
         boxShadow: '0 0 12px rgba(45, 161, 78, 0.3)',
       }}
       animate={{ rotate: [-3, 3, -3] }}
-      transition={{
-        duration: 4 + Math.random() * 2,
-        repeat: Number.POSITIVE_INFINITY,
-        ease: 'easeInOut',
-      }}
+      transition={{ duration: 4 + Math.random() * 2, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
     />
   );
 }
 
-interface Props {
-  mood: CrabMood;
-  crabXPct: number; // 0..100 — where the crab is along the floor
-  onCrabTap?: () => void;
+interface FoodPellet {
+  id: string;
+  xPct: number; // horizontal position on the floor
+  spawnedAt: number;
+  // false until it's reached the floor; true once the crab can eat it.
+  landed: boolean;
 }
 
-export function Aquarium({ mood, crabXPct, onCrabTap }: Props): JSX.Element {
-  // Stable random bubble layout per mount.
+interface Props {
+  mood: CrabMood;
+  // 0..100, base autonomous position
+  autonomousXPct: number;
+  onCrabTap?: () => void;
+  miniGameEnabled?: boolean;
+  onFoodEaten?: () => void;
+}
+
+const FLOOR_OFFSET_PX = 18; // crab's bottom offset
+const CRAB_HALF_WIDTH_PCT = 6;
+
+export function Aquarium({
+  mood,
+  autonomousXPct,
+  onCrabTap,
+  miniGameEnabled = true,
+  onFoodEaten,
+}: Props): JSX.Element {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [food, setFood] = useState<FoodPellet[]>([]);
+  const [crabXPct, setCrabXPct] = useState(autonomousXPct);
+  const [score, setScore] = useState(0);
+  // Sparkle animation triggered when food is eaten.
+  const [sparkles, setSparkles] = useState<Array<{ id: string; xPct: number }>>([]);
+
   const bubbles = useMemo(
     () =>
       Array.from({ length: 14 }, (_, i) => ({
@@ -83,19 +105,94 @@ export function Aquarium({ mood, crabXPct, onCrabTap }: Props): JSX.Element {
       })),
     [],
   );
-
   const kelpPositions = useMemo(() => [6, 22, 78, 92], []);
+
+  const handleTankClick = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      if (!miniGameEnabled) return;
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      // Get x from either mouse or touch.
+      const point = 'touches' in e ? e.touches[0] ?? e.changedTouches[0] : e;
+      if (!point) return;
+      const xPx = point.clientX - rect.left;
+      const xPct = (xPx / rect.width) * 100;
+      if (xPct < 2 || xPct > 98) return;
+      setFood((f) =>
+        [
+          ...f,
+          { id: `food-${Date.now()}-${Math.random()}`, xPct, spawnedAt: Date.now(), landed: false },
+        ].slice(-12),
+      );
+    },
+    [miniGameEnabled],
+  );
+
+  // Crab AI: every tick, walk toward the nearest landed food. If none,
+  // ease back to the autonomous sine position.
+  useEffect(() => {
+    const id = setInterval(() => {
+      setCrabXPct((current) => {
+        const targets = food.filter((p) => p.landed);
+        const nearest = targets.reduce<FoodPellet | null>((best, p) => {
+          if (!best) return p;
+          return Math.abs(p.xPct - current) < Math.abs(best.xPct - current) ? p : best;
+        }, null);
+        const target = nearest ? nearest.xPct : autonomousXPct;
+        const speed = nearest ? (mood === 'burning' ? 2.4 : 1.4) : 0.4;
+        const diff = target - current;
+        if (Math.abs(diff) < 0.5) return current;
+        const step = Math.sign(diff) * Math.min(speed, Math.abs(diff));
+        const next = current + step;
+
+        // Check eat collision.
+        if (nearest && Math.abs(next - nearest.xPct) < CRAB_HALF_WIDTH_PCT) {
+          // Eat it.
+          setFood((f) => f.filter((p) => p.id !== nearest.id));
+          setSparkles((s) =>
+            [...s, { id: `spark-${Date.now()}`, xPct: nearest.xPct }].slice(-6),
+          );
+          setScore((sc) => sc + 1);
+          onFoodEaten?.();
+        }
+        return next;
+      });
+    }, 60);
+    return () => clearInterval(id);
+  }, [food, autonomousXPct, mood, onFoodEaten]);
+
+  // Mark food as landed once their fall animation should be done (~600ms).
+  useEffect(() => {
+    if (food.length === 0) return;
+    const id = setTimeout(() => {
+      setFood((f) =>
+        f.map((p) => (Date.now() - p.spawnedAt > 600 ? { ...p, landed: true } : p)),
+      );
+    }, 120);
+    return () => clearTimeout(id);
+  }, [food]);
+
+  // Sparkles fade out.
+  useEffect(() => {
+    if (sparkles.length === 0) return;
+    const id = setTimeout(() => setSparkles((s) => s.slice(1)), 800);
+    return () => clearTimeout(id);
+  }, [sparkles]);
 
   return (
     <div
+      ref={containerRef}
+      onClick={handleTankClick}
+      onTouchEnd={handleTankClick}
       style={{
         position: 'absolute',
         inset: 0,
         background: 'linear-gradient(to bottom, var(--water-top) 0%, var(--water-bot) 100%)',
         overflow: 'hidden',
+        cursor: miniGameEnabled ? 'pointer' : 'default',
       }}
     >
-      {/* Caustic-light flicker overlay */}
       <motion.div
         style={{
           position: 'absolute',
@@ -108,17 +205,14 @@ export function Aquarium({ mood, crabXPct, onCrabTap }: Props): JSX.Element {
         transition={{ duration: 6, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
       />
 
-      {/* Bubbles */}
       {bubbles.map((b, i) => (
         <Bubble key={i} {...b} />
       ))}
-
-      {/* Kelp */}
       {kelpPositions.map((l) => (
         <Kelp key={l} left={l} />
       ))}
 
-      {/* Floor — pebble strip at bottom */}
+      {/* Floor */}
       <div
         style={{
           position: 'absolute',
@@ -142,17 +236,106 @@ export function Aquarium({ mood, crabXPct, onCrabTap }: Props): JSX.Element {
         }}
       />
 
-      {/* Crab — slides along the floor with mood-aware speed. The motion.div
-          is non-interactive so the button inside catches taps cleanly. */}
+      {/* Food pellets */}
+      <AnimatePresence>
+        {food.map((p) => (
+          <motion.div
+            key={p.id}
+            initial={{ top: '20%', opacity: 0 }}
+            animate={{ top: `calc(100% - ${FLOOR_OFFSET_PX + 12}px)`, opacity: 1 }}
+            exit={{ opacity: 0, scale: 0 }}
+            transition={{ duration: 0.6, ease: 'easeIn' }}
+            style={{
+              position: 'absolute',
+              left: `${p.xPct}%`,
+              width: 8,
+              height: 8,
+              marginLeft: -4,
+              borderRadius: 4,
+              background: 'radial-gradient(circle, #ffd700, #b3870b)',
+              boxShadow: '0 0 8px rgba(255, 215, 0, 0.5)',
+              pointerEvents: 'none',
+            }}
+          />
+        ))}
+      </AnimatePresence>
+
+      {/* Eat sparkles */}
+      <AnimatePresence>
+        {sparkles.map((s) => (
+          <motion.div
+            key={s.id}
+            initial={{ opacity: 1, scale: 0.6 }}
+            animate={{ opacity: 0, scale: 2.2 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.7, ease: 'easeOut' }}
+            style={{
+              position: 'absolute',
+              left: `${s.xPct}%`,
+              bottom: FLOOR_OFFSET_PX + 20,
+              width: 24,
+              height: 24,
+              marginLeft: -12,
+              borderRadius: 12,
+              background: 'radial-gradient(circle, rgba(255,215,0,0.8), transparent 60%)',
+              pointerEvents: 'none',
+            }}
+          />
+        ))}
+      </AnimatePresence>
+
+      {/* Score */}
+      {miniGameEnabled && score > 0 ? (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 56,
+            left: 12,
+            fontSize: 11,
+            color: 'var(--neon-yellow)',
+            background: 'rgba(10,13,24,0.7)',
+            padding: '4px 8px',
+            borderRadius: 999,
+            border: '1px solid rgba(255,215,0,0.3)',
+          }}
+        >
+          🦀 fed × {score}
+        </div>
+      ) : null}
+
+      {/* Crab */}
       <motion.div
-        style={{ position: 'absolute', bottom: 18, pointerEvents: 'none', zIndex: 4 }}
+        style={{ position: 'absolute', bottom: FLOOR_OFFSET_PX, pointerEvents: 'none', zIndex: 4 }}
         animate={{ left: `calc(${crabXPct}% - 96px)` }}
-        transition={{ type: 'spring', stiffness: 30, damping: 18 }}
+        transition={{ type: 'spring', stiffness: 60, damping: 18 }}
       >
         <div style={{ pointerEvents: 'auto' }}>
           <Crab mood={mood} scale={6} onTap={onCrabTap} />
         </div>
       </motion.div>
+
+      {/* Hint, shown briefly */}
+      {miniGameEnabled && score === 0 ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0, 0.65, 0.65, 0] }}
+          transition={{ duration: 6, times: [0, 0.15, 0.85, 1] }}
+          style={{
+            position: 'absolute',
+            top: '40%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            color: 'var(--dim)',
+            fontSize: 11,
+            pointerEvents: 'none',
+            background: 'rgba(10,13,24,0.55)',
+            padding: '4px 10px',
+            borderRadius: 999,
+          }}
+        >
+          tap the water to feed the crab
+        </motion.div>
+      ) : null}
     </div>
   );
 }
