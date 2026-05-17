@@ -1,33 +1,45 @@
+import { type TokenBuckets, costInr, priceFor } from './Pricing';
 import type { UsageEvent } from './types';
 
 export interface ModelTotal {
   model: string;
   tokens: number;
+  costInr: number;
+}
+
+export interface ProjectTotal {
+  project: string;
+  tokens: number;
+  costInr: number;
+  models: string[];
 }
 
 export interface RecentTurn {
   ts: Date;
   model: string;
-  tokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
   project: string;
 }
 
 export interface ClaudeSummary {
-  // Total tokens across the last 5h window, deduplicated.
+  // Aggregated 5h-window totals, deduplicated.
   tokensWindow: number;
-  // Earliest event timestamp inside the 5h window — used to project the reset.
+  buckets: TokenBuckets;
+  costInr: number;
+  // Earliest event timestamp inside the 5h window.
   windowStartMs: number | null;
-  // When the current 5h window resets (windowStartMs + 5h). Null if no events.
+  // When the rolling 5h window's earliest event ages out.
   resetsAtMs: number | null;
-  // Tokens grouped by model, sorted descending.
+  // Tokens grouped by model, descending by tokens.
   byModel: ModelTotal[];
-  // Most recent N unique turns, newest first.
+  // Tokens grouped by project, descending by tokens.
+  byProject: ProjectTotal[];
+  // Most recent unique turns, newest first.
   recent: RecentTurn[];
-  // Most recently active project basename ("HAL9000" etc), null if none.
   currentProject: string | null;
-  // Model used in the most recent turn, null if none.
   currentModel: string | null;
-  // ms since the latest turn, null if none.
   latestAgeMs: number | null;
 }
 
@@ -43,6 +55,10 @@ function dedupKey(e: UsageEvent): string {
   return `${e.sessionId ?? ''}|${e.ts.getTime()}|${e.inputTokens}|${e.outputTokens}|${e.cacheCreationTokens}|${e.cacheReadTokens}`;
 }
 
+function eventTotal(e: UsageEvent): number {
+  return e.inputTokens + e.outputTokens + e.cacheCreationTokens + e.cacheReadTokens;
+}
+
 export function aggregateClaude(events: UsageEvent[], now = Date.now()): ClaudeSummary {
   const cutoff = now - FIVE_HOURS_MS;
   const seen = new Set<string>();
@@ -54,12 +70,16 @@ export function aggregateClaude(events: UsageEvent[], now = Date.now()): ClaudeS
     seen.add(key);
     unique.push(e);
   }
+
   if (unique.length === 0) {
     return {
       tokensWindow: 0,
+      buckets: { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 },
+      costInr: 0,
       windowStartMs: null,
       resetsAtMs: null,
       byModel: [],
+      byProject: [],
       recent: [],
       currentProject: null,
       currentModel: null,
@@ -67,40 +87,92 @@ export function aggregateClaude(events: UsageEvent[], now = Date.now()): ClaudeS
     };
   }
 
-  let tokensWindow = 0;
-  const modelMap = new Map<string, number>();
+  const buckets: TokenBuckets = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+  let totalCostInr = 0;
   let windowStartMs = Number.POSITIVE_INFINITY;
+
+  const modelMap = new Map<string, { tokens: number; costInr: number }>();
+  const projectMap = new Map<string, { tokens: number; costInr: number; models: Set<string> }>();
+
   for (const e of unique) {
-    const sum = e.inputTokens + e.outputTokens + e.cacheCreationTokens + e.cacheReadTokens;
-    tokensWindow += sum;
-    const m = e.model ?? 'unknown';
-    modelMap.set(m, (modelMap.get(m) ?? 0) + sum);
+    const sum = eventTotal(e);
+    buckets.input += e.inputTokens;
+    buckets.output += e.outputTokens;
+    buckets.cacheCreation += e.cacheCreationTokens;
+    buckets.cacheRead += e.cacheReadTokens;
+
+    const cost = costInr(
+      {
+        input: e.inputTokens,
+        output: e.outputTokens,
+        cacheCreation: e.cacheCreationTokens,
+        cacheRead: e.cacheReadTokens,
+      },
+      e.model,
+    );
+    totalCostInr += cost;
+
     const ts = e.ts.getTime();
     if (ts < windowStartMs) windowStartMs = ts;
+
+    const modelKey = e.model ?? 'unknown';
+    const prev = modelMap.get(modelKey) ?? { tokens: 0, costInr: 0 };
+    modelMap.set(modelKey, { tokens: prev.tokens + sum, costInr: prev.costInr + cost });
+
+    const proj = basename(e.projectPath);
+    if (proj) {
+      const p = projectMap.get(proj) ?? { tokens: 0, costInr: 0, models: new Set<string>() };
+      p.tokens += sum;
+      p.costInr += cost;
+      if (e.model) p.models.add(e.model);
+      projectMap.set(proj, p);
+    }
   }
 
-  const byModel = [...modelMap.entries()]
-    .map(([model, tokens]) => ({ model, tokens }))
+  const byModel: ModelTotal[] = [...modelMap.entries()]
+    .map(([model, v]) => ({ model, tokens: v.tokens, costInr: v.costInr }))
+    .sort((a, b) => b.tokens - a.tokens);
+
+  const byProject: ProjectTotal[] = [...projectMap.entries()]
+    .map(([project, v]) => ({
+      project,
+      tokens: v.tokens,
+      costInr: v.costInr,
+      models: [...v.models],
+    }))
     .sort((a, b) => b.tokens - a.tokens);
 
   const sorted = [...unique].sort((a, b) => b.ts.getTime() - a.ts.getTime());
-  const recent: RecentTurn[] = sorted.slice(0, 5).map((e) => ({
+  const recent: RecentTurn[] = sorted.slice(0, 6).map((e) => ({
     ts: e.ts,
     model: e.model ?? 'unknown',
-    tokens: e.inputTokens + e.outputTokens + e.cacheCreationTokens + e.cacheReadTokens,
+    inputTokens: e.inputTokens,
+    outputTokens: e.outputTokens,
+    cacheReadTokens: e.cacheReadTokens,
     project: basename(e.projectPath),
   }));
   const latest = sorted[0];
+
   return {
-    tokensWindow,
+    tokensWindow: buckets.input + buckets.output + buckets.cacheCreation + buckets.cacheRead,
+    buckets,
+    costInr: totalCostInr,
     windowStartMs,
     resetsAtMs: windowStartMs + FIVE_HOURS_MS,
     byModel,
+    byProject,
     recent,
     currentProject: latest?.projectPath ? basename(latest.projectPath) : null,
     currentModel: latest?.model ?? null,
     latestAgeMs: latest ? now - latest.ts.getTime() : null,
   };
+}
+
+export function sessionProgressPct(windowStartMs: number | null, now = Date.now()): number {
+  if (windowStartMs === null) return 0;
+  const elapsed = now - windowStartMs;
+  const pct = (elapsed / FIVE_HOURS_MS) * 100;
+  return Math.max(0, Math.min(100, pct));
 }
 
 export function formatTokens(n: number): string {
@@ -131,10 +203,31 @@ export function formatCountdown(targetMs: number | null, now = Date.now()): stri
   return `${m}m`;
 }
 
+export function formatClockTime(ms: number | null): string {
+  if (ms === null) return '—';
+  const d = new Date(ms);
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? 'pm' : 'am';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${m.toString().padStart(2, '0')}${ampm}`;
+}
+
 export function shortModel(model: string): string {
-  // Drop the leading "claude-" prefix and the version suffix where possible.
-  // "claude-opus-4-7" → "opus", "claude-sonnet-4-6" → "sonnet"
   const m = model.replace(/^claude-/i, '');
   const stem = m.split('-')[0] ?? m;
   return stem.toLowerCase();
 }
+
+// Mood for the crab based on tokens-in-window. Pure visual signal.
+export type CrabMood = 'chill' | 'focused' | 'cooking' | 'burning';
+
+export function moodFor(tokens: number): CrabMood {
+  if (tokens < 500_000) return 'chill';
+  if (tokens < 5_000_000) return 'focused';
+  if (tokens < 20_000_000) return 'cooking';
+  return 'burning';
+}
+
+export { priceFor };
