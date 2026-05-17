@@ -60,9 +60,13 @@ export class ClaudeAdapter implements ProviderAdapter {
         if (err instanceof RateLimitedError) {
           // 5-minute backoff matches Tokemon's pattern; the API allows ~1 req / 2 min.
           this.rateLimitedUntilMs = now + 5 * 60 * 1000;
-        } else if (!(err instanceof TokenExpiredError)) {
-          // Network or unexpected error — fall through to JSONL.
+        } else if (err instanceof TokenExpiredError) {
+          // Re-throw so PollScheduler records the error visibly in the UI's
+          // lastError chip. Silent fallback would let the utilization bar
+          // disappear with no explanation. Users need to /login in Claude Code.
+          throw new Error('Claude OAuth token expired — run /login in Claude Code');
         }
+        // Network or other transient error — fall through to JSONL.
       }
     }
 

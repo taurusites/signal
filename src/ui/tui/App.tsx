@@ -30,11 +30,18 @@ export function App({
   useSystemInformation,
 }: Props): React.ReactElement {
   const { exit } = useApp();
-  const [tick, setTick] = useState(0);
+  const [, setTick] = useState(0);
   const [hw, setHw] = useState<HwSample | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   useInput((input) => {
     if (input === 'q') exit();
+    if (input === '?') setShowHelp((s) => !s);
+    if (input === 'c') {
+      // Exit the TUI so the user can run `signal config` — launching $EDITOR
+      // from inside Ink's alt-screen mode mangles the terminal.
+      exit();
+    }
   });
 
   useEffect(() => {
@@ -106,9 +113,17 @@ export function App({
           />
         ))}
       </Box>
-      <Box paddingX={1}>
-        <Text dimColor>tick {tick} · q quit</Text>
-      </Box>
+      {showHelp ? (
+        <Box paddingX={1} flexDirection="column">
+          <Text>q · quit</Text>
+          <Text>c · exit and edit ~/.signal/config.toml (run `signal config` after)</Text>
+          <Text>? · toggle this help</Text>
+        </Box>
+      ) : (
+        <Box paddingX={1}>
+          <Text dimColor>? help · c config · q quit</Text>
+        </Box>
+      )}
     </Box>
   );
 }
