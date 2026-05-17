@@ -1,12 +1,15 @@
 #!/usr/bin/env bun
+import { execFileSync } from 'node:child_process';
 import { Command } from 'commander';
 import { render } from 'ink';
+// biome-ignore lint/style/useImportType: classic JSX transform requires React as a value
 import React from 'react';
 import { ClaudeAdapter } from './adapters/claude';
 import { EventStore } from './core/EventStore';
 import { PollScheduler } from './core/PollScheduler';
 import { ProviderRegistry } from './core/ProviderRegistry';
-import { loadConfig, writeDefaultConfig } from './core/config';
+import { configPath, loadConfig, writeDefaultConfig } from './core/config';
+import { runDoctor } from './ui/doctor';
 import { runJson } from './ui/json';
 import { runStatus } from './ui/status';
 import { App } from './ui/tui/App';
@@ -27,6 +30,23 @@ program
   .description('Machine-readable usage + hardware snapshot')
   .action(async () => {
     await runJson();
+  });
+
+program
+  .command('doctor')
+  .description('Diagnose adapter auth and hardware sampling')
+  .action(async () => {
+    const code = await runDoctor();
+    process.exit(code);
+  });
+
+program
+  .command('config')
+  .description('Open ~/.signal/config.toml in $EDITOR')
+  .action(() => {
+    writeDefaultConfig();
+    const editor = process.env.EDITOR ?? 'vi';
+    execFileSync(editor, [configPath()], { stdio: 'inherit' });
   });
 
 program
