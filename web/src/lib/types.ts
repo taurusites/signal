@@ -61,8 +61,16 @@ export interface HwSnapshot {
   gpuPct: number | null;
 }
 
+export interface ClaudeCliInstance {
+  cwd: string;
+  project: string;
+  pids: number[];
+  startedAt: number | null;
+}
+
 export interface SignalSnapshot {
-  generatedAt: string;
+  generatedAt: number;
   claude: ClaudeSummary;
+  processes: ClaudeCliInstance[];
   hardware: HwSnapshot;
 }

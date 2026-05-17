@@ -6,6 +6,7 @@ import { aggregateClaude } from '../core/Aggregator';
 import { EventStore } from '../core/EventStore';
 import { HardwareSampler } from '../core/HardwareSampler';
 import { PollScheduler } from '../core/PollScheduler';
+import { detectClaudeCliInstances } from '../core/Processes';
 import { ProviderRegistry } from '../core/ProviderRegistry';
 import { loadConfig, writeDefaultConfig } from '../core/config';
 
@@ -105,6 +106,9 @@ export async function runServe(opts: ServeOptions = {}): Promise<void> {
     return JSON.stringify({
       generatedAt: Date.now(),
       claude: claudeWire,
+      // Live process detection — what `claude` CLI instances are currently
+      // running, by working directory. Independent of JSONL freshness.
+      processes: detectClaudeCliInstances(),
       hardware: {
         cpuPct: hw.cpuPct,
         cpuPerCore: hw.cpuPerCore,

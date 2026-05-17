@@ -15,6 +15,7 @@ import { type Currency, loadCurrency, resetLayout, saveCurrency } from '../lib/l
 import type { SignalSnapshot } from '../lib/types';
 import { DraggableCard } from './DraggableCard';
 import { LiveSessions } from './LiveSessions';
+import { RunningSessions } from './RunningSessions';
 
 interface Props {
   snapshot: SignalSnapshot | null;
@@ -298,8 +299,17 @@ export function DataPanel({ snapshot, connected, staleMs = 0, onMoodHack }: Prop
         </DraggableCard>
       ) : null}
 
-      {/* LIVE SESSIONS — sits between projects and recent on the right side */}
-      <DraggableCard id="live" anchor={{ top: 360, right: 16, width: 300 }}>
+      {/* RUNNING TERMINALS — the actual `claude` CLI processes on this host */}
+      <DraggableCard id="running" anchor={{ top: 360, right: 16, width: 320 }}>
+        <RunningSessions
+          processes={snapshot.processes ?? []}
+          projects={claude.byProject}
+          formatMoney={(r) => formatMoney(r, currency)}
+        />
+      </DraggableCard>
+
+      {/* LIVE SESSIONS — projects with recent JSONL turns */}
+      <DraggableCard id="live" anchor={{ bottom: 360, right: 16, width: 320 }}>
         <LiveSessions
           projects={claude.byProject}
           formatMoney={(r) => formatMoney(r, currency)}

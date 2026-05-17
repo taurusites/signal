@@ -11,6 +11,7 @@ import {
 import type { Currency } from '../lib/layout';
 import type { SignalSnapshot } from '../lib/types';
 import { LiveSessions } from './LiveSessions';
+import { RunningSessions } from './RunningSessions';
 
 // Phone-friendly widget grid. Two-column glass chips, some spanning both
 // columns for headlines. Tap-friendly, scrollable, no drag chaos.
@@ -168,7 +169,16 @@ export function DataPanelMobile({
           <MiniBar pct={intensity} color="var(--neon-cyan)" />
         </Chip>
 
-        {/* Live sessions — wide chip immediately under the hero */}
+        {/* Running terminals — actual `claude` CLI processes by working dir */}
+        <Chip span={2} accent="rgba(90,240,255,0.35)">
+          <RunningSessions
+            processes={snapshot.processes ?? []}
+            projects={c.byProject}
+            formatMoney={formatMoney}
+          />
+        </Chip>
+
+        {/* Live sessions — projects with recent JSONL turns (5h window) */}
         <Chip span={2} accent="rgba(111,255,138,0.3)">
           <LiveSessions projects={c.byProject} formatMoney={formatMoney} />
         </Chip>
