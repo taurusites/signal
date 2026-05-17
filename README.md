@@ -1,19 +1,31 @@
-# signal
+# signal — multi-display tank
+
+> **v2** branch — adds a live web tank UI on top of the v1 terminal CLI.
+> The same daemon serves the data over WebSocket; the UI runs on your
+> phone, tablet, MacBook browser, external display, or anywhere with a
+> browser pointed at the daemon. Pixel-art animated crab included.
 
 Multi-provider usage monitor for AI coding agents. **Signal, not noise.**
 
-`signal` watches your AI usage and host hardware in one TUI. Live token counts from Claude Code (v1.0) plus a CPU/RAM/GPU strip. Codex, Cursor, Gemini, and Copilot adapters land in v1.1. Built by [Affordance Design Studio](https://affordance.design). MIT.
+`signal` watches your AI usage and host hardware. The v1 terminal TUI is here too — but the headline of v2 is `signal serve`, which spins up a WebSocket daemon and a web tank that any browser on your Wi-Fi can open. Built by [Affordance Design Studio](https://affordance.design). MIT.
 
-## Why
+## What's in v2
 
-Other monitors lean on the macOS Keychain to fetch exact `%` utilization from Anthropic's API. That requires per-binary Keychain ACL grants and breaks on every rebuild. `signal` reads your local Claude Code JSONL session logs instead — zero prompts, zero keychain access, zero auth dance. You get **real token counts, models, projects, sessions, and a hardware strip**, updated within a second of Claude writing a turn.
-
-If you want exact `%` of plan limit (5h / 7d / Opus / Sonnet), run `signal auth claude` for an optional walkthrough. Most users never need it.
+- **Web tank UI** — animated pixel-art aquarium with [Marcio Granzotto's clawd-tank](https://github.com/marciogranzotto/clawd-tank) crab (MIT). Mood states drive the crab's animation: chill → focused → cooking → on-fire as your 5h token spend climbs.
+- **Multi-surface** — one web bundle, four surfaces: phone / tablet / browser / external display. Future: Tauri menu-bar and borderless desktop window (planned).
+- **Live data over WebSocket** — every Claude Code turn pushes to all connected clients within ~250ms (via `fs.watch` on `~/.claude/projects`).
+- **Running terminals detector** — finds every active `claude` CLI process by working directory and groups subagent children. See which projects are *actually* alive right now, not just which have written events recently.
+- **Token-flow + cache savings** — input → output flow with cache-write / cache-read split. Quantifies prompt-cache savings against full-input pricing.
+- **Mini-game** — tap the water on the tank page; food drops, crab walks over, eats with a sparkle. Synthesized footstep / splash / sparkle audio (no asset files).
+- **INR-first cost** — Indian lakh/crore-style grouping. Tap the headline to flip to USD.
+- **Phone widget grid** — 7 chips (down from 14) with expandable detail sections; cards are draggable on desktop.
+- **Toasts** — pop on every new Claude turn and mood transition.
+- **Settings page** — FX rate, mood thresholds, sounds toggle, mini-game toggle.
 
 ## Install
 
 ```bash
-# macOS — recommended
+# macOS — recommended (Homebrew formula in progress)
 brew install affordance/tap/signal
 
 # Anywhere with Bun (or run `npm i -g bun` first)
@@ -23,22 +35,44 @@ npm install -g @affordance/signal
 ## Use
 
 ```bash
-signal                 # live TUI — hardware strip + Claude row, updates within 1s
-signal status          # one-shot table — exit 0 ok, 1 warn (>70%), 2 crit (>90%)
-signal json            # machine-readable snapshot for scripts and statuslines
-signal doctor          # diagnose adapter detection and hardware sampling
+# v1 terminal CLI
+signal                 # live TUI — hardware strip + Claude row
+signal status          # one-shot table (exit 0/1/2 by severity)
+signal json            # machine-readable snapshot
+signal doctor          # diagnose adapter detection and hardware
 signal config          # edit ~/.signal/config.toml in $EDITOR
 
-# Opt-in extras
-signal auth claude           # walkthrough: enable exact-% via Anthropic OAuth (needs Keychain ACL grant)
-signal auth claude-disable   # turn OAuth back off, return to JSONL-only
+# v2 web tank
+signal serve           # start the daemon — prints local + LAN URLs to open
+signal serve -p 9000   # custom port
+
+# Opt-in
+signal auth claude     # enable exact-% utilization via Anthropic OAuth
 ```
 
-## How it works
+On your phone, point the browser at the LAN URL the daemon prints (e.g. `http://192.168.1.42:8787`) and Share → **Add to Home Screen**. PWA manifest ships with the page so it installs like a native app.
 
-`signal` reads `~/.claude/projects/*.jsonl` — the same logs Claude Code writes for every turn — and aggregates them locally in a SQLite event store at `~/.signal/events.db`. A `fs.watch` on the projects directory pushes new turns into the TUI within ~250ms. Nothing leaves your machine. No telemetry, no accounts, no API keys to manage.
+## Architecture
 
-Hardware sampling (CPU, RAM, load average, GPU on macOS) runs only while the TUI is alive. Baseline uses Node's `os` module; install the optional `systeminformation` dep for per-core CPU, memory pressure, and richer GPU metrics.
+```
+~/.claude/projects/*.jsonl   ← Claude Code writes turns here
+            │
+            ▼
+       signal daemon (Bun + Bun.serve)         ←  `pgrep` + `lsof` for live process detect
+            │  fs.watch + 5s safety poll
+            ▼
+       SQLite event store at ~/.signal/events.db
+            │  aggregateClaude() → ClaudeSummary
+            ▼
+        WebSocket  /ws  pub/sub
+            │
+   ┌────────┼────────┬─────────────┐
+   ▼        ▼        ▼             ▼
+ phone   browser   tablet   external display
+ (PWA)   (any)     (PWA)    (kiosk on TV)
+```
+
+Same `web/dist/` bundle on every surface. Pull-to-refresh on phone, the WebSocket reconnects automatically. iOS Safari background-throttle detected via a local heartbeat and the connection is forced back open when the tab returns.
 
 ## Configuration
 
@@ -56,19 +90,29 @@ useSystemInformation = true
 useOauth = false   # set true (or run `signal auth claude`) for exact % utilization
 ```
 
+User-side preferences (currency, FX rate, mood thresholds, sounds, layout) are stored in browser `localStorage` per device.
+
+## How it works
+
+`signal` reads `~/.claude/projects/*.jsonl` — the same logs Claude Code writes for every turn — and aggregates them in a SQLite event store at `~/.signal/events.db`. A `fs.watch` on the projects directory pushes new turns into the daemon within ~250ms, which broadcasts them to all WebSocket clients.
+
+For "what Claude Code processes are alive *right now*," the daemon runs `pgrep -f` + `lsof -d cwd` on every snapshot, groups by working directory, and surfaces the list to the UI with a pulsing-dot live/recent/idle classification.
+
+Hardware sampling (CPU, RAM, load average, GPU on macOS) runs continuously while the daemon is up. Baseline uses Node's `os` module; install the optional `systeminformation` dep for per-core CPU, memory pressure, and richer GPU metrics.
+
+Nothing leaves your machine. No telemetry, no accounts, no API keys to manage.
+
 ## Credits
 
-The animated pixel-art crab in the web tank (`web/public/clawd/*.svg`) is from
-[clawd-tank](https://github.com/marciogranzotto/clawd-tank) by Marcio Granzotto
-Rodrigues, used under the MIT License. See `web/public/clawd/NOTICE.md`.
+The animated pixel-art crab in the web tank (`web/public/clawd/*.svg`) is from [clawd-tank](https://github.com/marciogranzotto/clawd-tank) by **Marcio Granzotto Rodrigues**, used under the MIT License. See `web/public/clawd/NOTICE.md`.
 
 ## Status
 
-**v1.0 — Claude + hardware, zero-config.** Source MIT. Issues and PRs welcome at github.com/shandar/signal.
+**v2 in development** on the `v2-multi-display` branch. The v1 terminal CLI lives on `main` and is tagged `v0.1.0`.
 
 Follow-on plans, in priority order:
-1. **v1.1** — Codex, Cursor, and Gemini adapters
-2. **v1.2** — GitHub Copilot adapter (experimental)
-3. **v1.3** — Homebrew tap + notarized binaries + npm publish workflow
-4. **v2.0** — ROI layer (cost per shipped PR via `git_commits` join), predictive intervention
-5. **v3.0** — Tauri cross-platform tray + VS Code/Cursor sidebar
+1. **Tauri menu-bar wrapper** — `signal-bar` sits in your Mac menu bar; click opens the same web tank in a popover
+2. **Tauri borderless desktop window** — `signal-tank` floats in a corner of your screen, always-on-top
+3. **Codex / Cursor / Gemini / Copilot adapters** — multi-provider beyond Claude
+4. **ROI layer** — join the `git_commits` table to `events` for cost-per-PR
+5. **Homebrew tap + notarized binaries + npm publish workflow** — proper distribution
