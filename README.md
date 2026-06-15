@@ -84,13 +84,21 @@ On your phone, point the browser at the LAN URL the daemon prints (e.g. `http://
 
 ## Install
 
-```bash
-# macOS — recommended (Homebrew formula in progress)
-brew install affordance/tap/signal
+For now, build from source. Requires [Bun](https://bun.sh).
 
-# Anywhere with Bun (or run `npm i -g bun` first)
-npm install -g @affordance/signal
+```bash
+git clone https://github.com/shandar/signal.git
+cd signal
+bun install
+cd web && bun install && bun run build && cd ..
+bun run compile
+# Produces ./dist/signal — a single self-contained binary.
+# Move it onto your $PATH or run it from the repo:
+./dist/signal           # live TUI
+./dist/signal serve     # web tank daemon
 ```
+
+Coming soon: `brew install affordance/tap/signal` (Homebrew tap) and `npm install -g @affordance/signal` (npm). Neither is published yet — see [Status](#status) for the roadmap.
 
 ## Architecture
 

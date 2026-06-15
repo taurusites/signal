@@ -164,7 +164,9 @@ export async function runServe(opts: ServeOptions = {}): Promise<void> {
   // Heartbeat publish every 1s so ages and countdowns animate even when
   // no Claude turn has fired. The hardware sample also refreshes on this tick.
   const heartbeat = setInterval(() => {
-    void publishSnapshot();
+    publishSnapshot().catch((err) => {
+      console.error('[signal] heartbeat publish failed:', err);
+    });
   }, 1000);
 
   const server = Bun.serve({
