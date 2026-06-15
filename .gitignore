@@ -14,3 +14,6 @@ web/tsconfig.tsbuildinfo
 
 # Internal product planning — not for the public repo
 docs/superpowers/
+
+# Project-level Claude Code conventions — kept local, not in public repo
+CLAUDE.md
