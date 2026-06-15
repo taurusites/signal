@@ -82,7 +82,7 @@ auth
 program
   .command('tui', { isDefault: true })
   .description('Live TUI (default)')
-  .action(() => {
+  .action(async () => {
     writeDefaultConfig();
     const cfg = loadConfig();
     const store = new EventStore(cfg.dbPath);
@@ -91,15 +91,24 @@ program
     for (const a of all) if (cfg.enabledProviders.includes(a.id)) registry.register(a);
     const sched = new PollScheduler(store);
     for (const a of registry.list()) sched.add(a);
-    render(
+    let editConfigAfterExit = false;
+    const instance = render(
       React.createElement(App, {
         adapters: registry.list(),
         store,
         scheduler: sched,
         sampleIntervalMs: cfg.hardware.sampleIntervalMs,
         useSystemInformation: cfg.hardware.useSystemInformation,
+        onEditConfig: () => {
+          editConfigAfterExit = true;
+        },
       }),
     );
+    await instance.waitUntilExit();
+    if (editConfigAfterExit) {
+      const editor = process.env.EDITOR ?? 'vi';
+      execFileSync(editor, [configPath()], { stdio: 'inherit' });
+    }
   });
 
 program.parse();

@@ -18,6 +18,9 @@ interface Props {
   scheduler: PollScheduler;
   sampleIntervalMs: number;
   useSystemInformation: boolean;
+  /** Called when the user presses `c` to open ~/.signal/config.toml.
+   *  Receives a signal to launch $EDITOR after the TUI unmounts. */
+  onEditConfig?: () => void;
 }
 
 export function App({
@@ -26,6 +29,7 @@ export function App({
   scheduler,
   sampleIntervalMs,
   useSystemInformation,
+  onEditConfig,
 }: Props): React.ReactElement {
   const { exit } = useApp();
   const [, setTick] = useState(0);
@@ -35,7 +39,10 @@ export function App({
   useInput((input) => {
     if (input === 'q') exit();
     if (input === '?') setShowHelp((s) => !s);
-    if (input === 'c') exit();
+    if (input === 'c') {
+      onEditConfig?.();
+      exit();
+    }
   });
 
   useEffect(() => {
@@ -97,7 +104,7 @@ export function App({
       {showHelp ? (
         <Box paddingX={1} flexDirection="column">
           <Text>q · quit</Text>
-          <Text>c · exit (then run `signal config` to edit ~/.signal/config.toml)</Text>
+          <Text>c · open ~/.signal/config.toml in $EDITOR</Text>
           <Text>? · toggle this help</Text>
         </Box>
       ) : (
