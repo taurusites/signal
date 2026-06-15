@@ -8,7 +8,14 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': { target: 'http://localhost:8787', changeOrigin: true },
-      '/ws': { target: 'ws://localhost:8787', ws: true },
+      // Use http:// target with ws:true so http-proxy auto-detects the upgrade
+      // and proxies the WebSocket cleanly. The ws:// target form drops frames
+      // after the 101 handshake under Bun's WebSocket implementation.
+      '/ws': {
+        target: 'http://localhost:8787',
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
   build: { outDir: 'dist', emptyOutDir: true },
