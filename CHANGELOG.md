@@ -1,172 +1,164 @@
-# Changelog — `main`
+# Changelog — `v2-multi-display`
 
-All notable changes on the main branch (the v1 terminal CLI). Format follows [Keep a Changelog](https://keepachangelog.com/). Each entry header is the commit short SHA on origin.
+All notable changes on this branch. Format follows [Keep a Changelog](https://keepachangelog.com/). Each section header is the commit short SHA on origin.
 
-The v2 multi-display web tank lives on the `v2-multi-display` branch; its history is in `CHANGELOG.md` there.
+This branch starts where `main` ends (currently `82afc68`, the clawd-port commit). Everything below is **only on v2-multi-display**; the same `main` history lives in `CHANGELOG.md` on `main`.
 
 ---
 
-## Unreleased — animated pixel-art crab
+## Unreleased — phone + tablet + browser web tank
+
+### Multi-provider (Codex)
+
+#### `<HEAD>` — feat(codex): multi-provider adapter, wire, pricing, UI, doctor
+- New `src/adapters/codex/` (jsonl.ts + index.ts) parses Codex CLI session
+  logs at `~/.codex/sessions/<Y>/<M>/<D>/rollout-*.jsonl` and emits one
+  UsageEvent per `event_msg.token_count` record; model attribution via the
+  latest `turn_context.model` the parser has seen.
+- No OAuth dance — Codex bakes rate-limit data into the JSONL records
+  themselves. Just walk the directory and you have everything (5h + 7d
+  windows, `used_percent`, `resets_at`, `plan_type`).
+- `UsageEvent.reasoningOutputTokens?` added for hidden o-series / gpt-5
+  reasoning tokens; EventStore migration v2 adds the column.
+- `Aggregator.aggregateProvider(events, { provider, displayName })` is now
+  the canonical name (aggregateClaude kept as a thin alias). Reasoning
+  tokens tracked separately on ProviderSummary; folded into output for
+  cost calculation (Codex bills at output rate).
+- `Pricing.ts` extended with GPT-5/Codex, o3, o4-mini, GPT-4o rate tables.
+- Daemon snapshot envelope now `{ providers: { claude?, codex? }, claude
+  (legacy), processes, hardware }` — backward-compat top-level `claude`
+  field preserved.
+- `Processes.detectCodexCliInstances()` finds `codex` CLI processes via
+  pgrep + lsof, tagged with `provider` field.
+- New web `ProviderSwitcher` floating pill (top-left) shown when 2+
+  providers have data; single-provider scenarios render exactly like
+  before.
+- `signal doctor` reports both providers separately with detection +
+  recent-event count for Codex; exits 0 if any provider works.
+- 4 new jsonl parser tests (real anonymized fixture + synthetic
+  malformed). All 25 tests green; lint + tsc clean.
+
+### Scaffolding & daemon
+
+#### `dfc160d` — feat(v2): web aquarium UI served by `signal serve` daemon
+- New Vite + React + framer-motion frontend under `web/`
+- `signal serve` command in `src/ui/serve.ts`: HTTP + WebSocket on `:8787` (Bun.serve)
+- Snapshot pushed every 1s + on every `~/.claude/projects` file change (debounced 250ms)
+- `/api/health`, `/api/snapshot`, `/ws` endpoints
+- Serves `web/dist/` with SPA fallback; prints LAN URLs for phone access
+- Pixel-art aquarium: gradient water, caustic flicker, bubbles, swaying kelp, pebble floor
+- Animated SVG crab (initial version — own `<rect>`-based art, later replaced)
+- Glass data panels overlaid on the tank
+- WebSocket client with exponential reconnect backoff
+- PWA manifest + apple-touch-icon for phone "Add to Home Screen"
+- CRT scanline + vignette overlay
+
+#### `3a388fe` — chore(web): noEmit on tsconfig
+- `tsc --noEmit` instead of `tsc -b` to stop emitting stray `.js` next to `.tsx` sources
+
+#### `ffbb0f1` — fix(v2): wire timestamps as numbers, add local clock tick, stale state
+- Daemon serializes `recent[].ts` as ms-epoch numbers (was ISO strings — broke `Date.now() - r.ts` arithmetic in the browser)
+- `useSignal` ticks a local 1s timer so ages and countdowns animate between pushes
+- Connection indicator with three states: `● live` (<3s), `● stale Ns`, `● offline`
+- Detect iOS Safari background-throttle (stale on "open" socket) and force-reopen
+- `visibilitychange` listener re-opens on tab return
+- `/api/snapshot` fetched on every (re)connect
+
+### Interactivity
+
+#### `99b777f` — feat(v2): interactive dashboard — draggable cards, tap-reactive crab, currency toggle
+- Cards wrapped in `DraggableCard` with framer-motion drag; CSS anchors stay responsive; offset persists in `localStorage`
+- Each card has a ▾/▴ collapse toggle, state also persisted
+- Crab is now an interactive `<button>`; tap plays a random reaction (wave / jump / spin / dance / surprise)
+- Tap the big cost number to flip between INR ↔ USD
+- Tap the mood chip to manually cycle the crab's mood (override expires after 8s)
+- Reset-layout button bottom-right wipes positions + reloads
+
+#### `823978d` — feat(v2): notifications, mini-game, multi-tank pager, settings, responsive
+- `useNotifications` hook + `Toasts` component: glass toasts on new Claude turns + mood transitions
+- Mini-game: tap water → food drops → crab walks over → eats with sparkle + score
+- `Pager` for 3 swipe pages (tank / stats / settings) — later consolidated to 2 pages
+- `StatsView` page with big-number headlines, token-flow chart, cache-savings call-out (later folded into main page)
+- `SettingsView` with FX rate, mood thresholds, toggles
+- `useMediaQuery` hook + `DataPanelMobile` for narrow viewports (≤720px stacked layout)
+
+### Pager fixes
+
+#### `cb36e0e` — fix(pager): proper viewport-px page widths + drag range
+- Pages laid out at exact `width: 100vw` instead of percentage math
+- Drag constraints set to `{ left: -(totalWidth-width), right: 0 }` so the strip can actually move during swipe
+- Velocity-based + offset-based swipe commit threshold (18% offset OR >350 px/s velocity)
+- Arrow-key navigation for desktop
+- Aquarium dropped `onTouchEnd` (only `onClick` now) so swipes don't double as taps
+
+#### `4920f7e` — fix(pager): touchAction pan-y on draggable strip
+- Vertical scroll inside pages works while horizontal drag still pages — fixes "scroll stuck" on phone
+
+### Mobile + UI polish
+
+#### `da75e0e` — feat(mobile): widget-grid layout
+- iOS-Home-Screen-style 2-column grid of glass chips on phone (replaces stacked column)
+- Accent borders coded by data semantics (cyan output, pink reset, lime session, yellow cache, etc.)
+- Some chips span 2 columns (hero, last activity, recent feed)
+
+### Live-process detection
+
+#### `1423b4b` — feat(live): show which Claude Code projects are running right now
+- `ProjectTotal.lastTurnMs` added through Aggregator → wire → web
+- `projectStatus()` classifies: `live` (<90s), `recent` (<5min), `idle`
+- `LiveSessions` component with pulsing-green dot for live projects
+
+#### `9733345` — feat: detect running claude CLI processes by working dir
+- New `src/core/Processes.ts`: `pgrep -f` + `lsof -d cwd` to enumerate `claude` CLI instances
+- Subagent children fold into their parent's CWD entry
+- Filters out macOS Claude.app helpers + signal's own daemon
+- Snapshot now includes `processes: ClaudeCliInstance[]` with `{ cwd, project, pids, startedAt }`
+- New `RunningSessions` widget — pulsing-dot live/recent/idle classification, uptime, lead PID, cost
 
 ### Visual upgrade
 
-#### `b6ce423` — docs: add terminal screenshot to README
-- Live capture of the TUI in cooking mood, full dashboard visible
+#### `20715e3` — feat(crab): clawd-tank animations
+- 30 hand-tuned CSS-keyframe SVG animations from [clawd-tank](https://github.com/marciogranzotto/clawd-tank) (MIT) copied to `web/public/clawd/`
+- Mood mapping: chill → `idle-living`, focused → `working-typing`, cooking → `working-builder`, burning → `working-overheated`
+- Tap-reaction pool: happy, eureka, grooving, hat-mishap, dizzy, juggling
+- Subtle CSS filter hue-shift per mood (cool chill → hot burning)
+- `NOTICE.md` + main README credit added
 
-#### `6652041` — docs: update README for animated crab + v2 pointer
-- Rewrites the README to lead with the animated pixel-art crab
-- Adds a top-of-readme pointer to the `v2-multi-display` branch
-- Reorders the follow-on plan list
+### Refactor
 
-#### `82afc68` — feat(tui): port clawd-tank pixel-art crab via half-blocks
-- New `src/ui/tui/crabSprite.ts` — direct port of Marcio Granzotto's clawd-tank `clawd-static-base.svg` (MIT)
-- 15×16 pixel sprite rendered as unicode half-blocks (`▀`) with truecolor fg/bg → 15×8 character cells
-- 4-pose walk cycle per mood with per-pixel deltas (`bodyDx`, `eyeDx`, `leftArmDy`, `rightArmDy`, `legPattern`)
-- Mood palettes: chill clay #DE886D → focused warm gold #E5A95D → cooking red-orange #E67050 → burning deep red #C03030
-- Run-coalescer in `Crab.tsx` merges adjacent same-color cells into single `<Text>` segments for performance
-- Particle row above the crab (cyan bubbles / yellow dots / yellow sparks / red heatwaves)
+#### `0260cba` — refactor(ui): consolidate chips, fold Stats page into main
+- Mobile chip count: 14 → 7. Hero combines spend + session + reset. Token-flow includes cache-savings inline. Models becomes expandable.
+- New `ExpandableChip` with header summary + animated collapse
+- Stats page removed from the Pager — its data lives in the chips now
+- Desktop DataPanel: 8 cards → 6 cards. Live + Projects subsumed by Running Terminals.
 
-#### `8e78123` — chore(lint): allow template literals
-- `biome.json` disables `noUnusedTemplateLiteral` — frame strings contain apostrophes (leg markers) so backticks are the right delimiter
+### Audio + interaction polish
 
-#### `fef5865` — feat(tui): animate the terminal crab with multi-frame mood cycles
-- First pass of TUI crab animation — frame-cycling unicode-block art (later replaced by the pixel-art port above)
-- Auto-twitch loop with 4 reactions (wave / jump / dance / spin) every 18-40s
+#### `5363424` — feat(crab): tight food collision + audio
+- `EAT_DISTANCE_PCT` 6 → 1.2: crab physically arrives on food before eating
+- New `web/src/lib/sounds.ts` synthesizes footstep / splash / sparkle via Web Audio
+- Footstep cadence follows mood walk speed (200ms burning → 720ms chill)
+- `unlockAudio()` from any tap satisfies Safari autoplay policy
+
+#### `37b9234` — feat(audio): higher-pitch tick footstep, distance-synced, mute toggle
+- Footstep rebuilt: bandpass-filtered noise burst at ~2kHz, ~45ms decay — sounds like chitin tapping rock
+- Step trigger switched to cumulative horizontal-distance accumulator (2.2% per step) — syncs to actual crab motion, not wall-clock
+- Floating `SoundToggle` button bottom-left — speaker pill, unlocks audio + toggles persistence
+
+### Documentation
+
+#### `558e4b9` — docs(v2): rewrite README for the multi-display tank
+- v2-focused description, architecture diagram, multi-surface use cases
+- Follow-on plans reordered to prioritize Tauri menu-bar + desktop window
+
+#### `d6b2100` — docs(v2): add web tank screenshot to README
+- Full-screen capture of the tank in Chrome at localhost:8787
+
+#### `81f9b93` — docs(v2): re-crop the web tank screenshot
+- 3024×1600 region-capture — just the tank canvas, no menu bar / dock / Chrome chrome
 
 ---
 
-## v0.1.0 — terminal CLI, shipped 2026-05-17
+## Versioning
 
-Tagged at `39ae97a`. The original v1 release with the card-style Claude card and INR pricing.
-
-### Card-style TUI + INR
-
-#### `39ae97a` — feat(tui): crab character, INR pricing, in→out flow, per-project breakdown, session timeline
-- ASCII crab with mood states (chill/focused/cooking/burning)
-- INR cost calculation (`src/core/Pricing.ts`) with Indian lakh/crore comma grouping
-- Per-model and per-project breakdown with cost
-- Session-progress timeline (rolling 5h window)
-- Input → output flow in headline + recent feed
-
-#### `56e782e` — feat(tui): card-style Claude view with reset countdown, model split, recent feed
-- Replaces minimal one-row Claude view with a richer card
-- Reset countdown (session start + 5h)
-- Top-3 model breakdown
-- Recent 5 turns feed
-
-### JSONL-first default
-
-#### `522aad2` — feat: make JSONL the default Claude path; OAuth opt-in
-- `claude.useOauth: false` default in `config.toml`
-- `ClaudeAdapter` skips keychain entirely when false
-- Poll cadence drops 150s → 5s when OAuth is off (JSONL has no rate limit)
-- TUI watches `~/.claude/projects` via `fs.watch` (debounced 250ms) for sub-second updates
-- New `signal auth claude` walkthrough for the opt-in OAuth path
-- `signal doctor` cleaned up — no "needs_auth" line when OAuth is disabled
-
-#### `3c0966a` — fix(ui): surface JSONL token tally when OAuth utilization unavailable
-- Previously: silent `—` when OAuth was off, even with active Claude turns writing JSONL
-- Now: token count over 5h window appears in the cell instead
-
-### Polish + LICENSE
-
-#### `3e85729` — fix: surface OAuth token expiry, add LICENSE, wire c/? keys, fix bin path
-- `TokenExpiredError` re-thrown so PollScheduler records the error visibly in the UI
-- MIT LICENSE file added
-- TUI keybinds: `?` toggles help, `c` exits (then run `signal config` for `$EDITOR`)
-- `package.json` `bin` points to `./src/index.ts`; `files` array declares the npm publish manifest
-
-#### `ef6db6f` — chore: add react-devtools-core, fix package.json indent
-- `react-devtools-core` is an ink compile-time dep that was missing
-- Drop stale biome-ignore comment
-
-### v1.0 release readiness
-
-#### `c447de4` — docs: add README with install, usage, and v1.0 status
-- Initial release-quality README
-
-#### `ff10aeb` — test(ui): Ink snapshot tests for status table
-- `ink-testing-library` smoke tests for the status table render
-
-### Subcommands
-
-#### `f79d1b0` — feat(ui): signal doctor diagnostics and signal config editor launch
-- `signal doctor` reports config path, Claude detection, hardware sample with truecolor severity
-- `signal config` opens `~/.signal/config.toml` in `$EDITOR`
-
-#### `8d5f42d` — feat(ui): live TUI with hardware strip, provider rows, sparklines and burn-rate ETA
-- Default `signal` command launches the live TUI (Ink default command)
-- Hardware strip at the top: CPU + RAM bars + load + GPU
-- Sparklines per provider row, burn-rate calc, ETA-to-cap formatting
-
-#### `84b574e` — feat(ui): signal json with provider snapshot + hardware sample
-- `signal json` emits a single JSON snapshot for scripts and statuslines
-- Includes per-provider snapshot + burn rate + ETA + hardware bucket
-
-#### `ad350a9` — feat(ui): signal status one-shot Ink table with severity exit codes
-- `signal status` renders a one-shot Ink table and exits
-- Exit codes: 0 ok / 1 warn (>70%) / 2 crit (>90%)
-
-### Core utilities
-
-#### `1300432` — feat(core): config loader (TOML) and GitJoiner stub
-- `src/core/config.ts` reads `~/.signal/config.toml` with merge-with-defaults
-- `GitJoiner` stub reserves the seam for v2 ROI work (git × events join)
-
-#### `187efd8` — feat(core): HardwareSampler
-- `node:os` module baseline (CPU diff via two snapshots, mem from `freemem`/`totalmem`, `loadavg`)
-- Optional `systeminformation` dep for richer per-core CPU, mem pressure, macOS GPU
-
-#### `99defb3` — feat(core): Forecaster
-- `burnRatePerHour(points)` with 2h rolling window
-- `etaToCapMs(currentUtilization, burnRate)` for "time until 100%" projection
-- `formatEta(ms)` for display
-
-#### `eb25fcc` — feat(core): ProviderRegistry and PollScheduler
-- `ProviderRegistry` — map-based collection of adapters
-- `PollScheduler` — per-adapter interval + exponential backoff
-- Per-adapter error isolation: one failing adapter never blocks the others
-
-### Claude adapter
-
-#### `501c0c8` — docs(adapters/claude): document hyphen-ambiguity + tighten oauth type cast
-- Code comment explaining that Claude's project-dir encoding loses fidelity on hyphenated path segments
-- Comment on the timestamp fallback in JSONL parser
-- `as never` → proper `RawWindow` type in oauth.ts
-
-#### `b71c100` — feat(adapters/claude): compose JSONL + OAuth into ProviderAdapter
-- `ClaudeAdapter` combines `parseClaudeSession()` JSONL fallback with `fetchUsage()` OAuth
-- 429 backoff (5-min sleep after rate-limit error)
-
-#### `577b26f` — feat(adapters/claude): keychain reader + OAuth usage client
-- `readClaudeKeychain()` via macOS `security` CLI, with darwin/non-darwin guard
-- `fetchUsage()` posts to Anthropic's usage API with the exact `oauth-2025-04-20` beta header
-- 429 → `RateLimitedError`, 401 → `TokenExpiredError`
-
-#### `027de2c` — feat(adapters/claude): JSONL parser
-- Defensive line-by-line parser of `~/.claude/projects/*.jsonl`
-- Skip malformed lines without throwing
-- `decodeProjectDirName('-Users-x-proj')` → `/Users/x/proj`
-- `findClaudeProjectDirs()` + `findRecentSessionFiles()` helpers
-
-### EventStore + types
-
-#### `887a9c7` — feat(core): EventStore on bun:sqlite
-- SQLite event store at `~/.signal/events.db`
-- Tables: `events`, `state`, `git_commits` (empty, for v2), `hw_samples`, `schema_version`
-- Inline migrations as string constants (works with `bun build --compile`)
-- Round-trip tests for events + hardware samples
-
-#### `fcd3d55` — feat(core): define UsageEvent, HwSample, AuthStatus, ProviderAdapter types
-- `src/core/types.ts` — single source of truth for all cross-module types
-
-### Initial scaffolding
-
-#### `19d52e2` — chore: drop better-sqlite3 in favor of built-in bun:sqlite
-- Sidesteps the Node/Bun ABI mismatch with native SQLite bindings
-
-#### `edaeb61` — chore: drop unused ink-table dep and trust better-sqlite3 postinstall
-- Pre-bun:sqlite cleanup
-
-#### `94ee153` — chore: scaffold Bun + TypeScript project with Biome and commander
-- Initial project setup, biome.json, tsconfig, package.json
+This branch hasn't been tagged. When v2 ships it will be `v0.2.0` (web tank as the headline). Tag on `main` for the v1 terminal CLI is `v0.1.0`.

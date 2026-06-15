@@ -1,5 +1,5 @@
 import { type TokenBuckets, costInr, priceFor } from './Pricing';
-import type { UsageEvent } from './types';
+import type { ProviderId, UsageEvent } from './types';
 
 export interface ModelTotal {
   model: string;
@@ -12,6 +12,10 @@ export interface ProjectTotal {
   tokens: number;
   costInr: number;
   models: string[];
+  // ms epoch of the most recent event seen for this project. Drives the
+  // 'live' classification in the UI — projects whose lastTurnMs is within
+  // a small window are treated as actively running Claude Code sessions.
+  lastTurnMs: number;
 }
 
 export interface RecentTurn {
@@ -23,10 +27,16 @@ export interface RecentTurn {
   project: string;
 }
 
-export interface ClaudeSummary {
+export interface ProviderSummary {
+  /** Which provider this summary describes (claude, codex, etc.) */
+  provider: ProviderId;
+  /** Display name for headlines (e.g., 'Claude Code', 'Codex') */
+  displayName: string;
   // Aggregated 5h-window totals, deduplicated.
   tokensWindow: number;
   buckets: TokenBuckets;
+  /** Hidden reasoning tokens (o-series / gpt-5) emitted across the window. */
+  reasoningTokens: number;
   costInr: number;
   // Earliest event timestamp inside the 5h window.
   windowStartMs: number | null;
@@ -42,6 +52,9 @@ export interface ClaudeSummary {
   currentModel: string | null;
   latestAgeMs: number | null;
 }
+
+/** Backward-compat alias for the original Claude-named type. */
+export type ClaudeSummary = ProviderSummary;
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 
@@ -59,7 +72,22 @@ function eventTotal(e: UsageEvent): number {
   return e.inputTokens + e.outputTokens + e.cacheCreationTokens + e.cacheReadTokens;
 }
 
-export function aggregateClaude(events: UsageEvent[], now = Date.now()): ClaudeSummary {
+interface AggregateOpts {
+  provider?: ProviderId;
+  displayName?: string;
+  now?: number;
+}
+
+/**
+ * Aggregate a stream of UsageEvent rows into a ProviderSummary. Provider
+ * label + display name default to 'claude' / 'Claude Code' so existing
+ * callers keep their behavior; pass `{ provider: 'codex', displayName: 'Codex' }`
+ * to summarize a Codex event stream.
+ */
+export function aggregateProvider(events: UsageEvent[], opts: AggregateOpts = {}): ProviderSummary {
+  const provider = opts.provider ?? 'claude';
+  const displayName = opts.displayName ?? 'Claude Code';
+  const now = opts.now ?? Date.now();
   const cutoff = now - FIVE_HOURS_MS;
   const seen = new Set<string>();
   const unique: UsageEvent[] = [];
@@ -73,8 +101,11 @@ export function aggregateClaude(events: UsageEvent[], now = Date.now()): ClaudeS
 
   if (unique.length === 0) {
     return {
+      provider,
+      displayName,
       tokensWindow: 0,
       buckets: { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 },
+      reasoningTokens: 0,
       costInr: 0,
       windowStartMs: null,
       resetsAtMs: null,
@@ -88,23 +119,32 @@ export function aggregateClaude(events: UsageEvent[], now = Date.now()): ClaudeS
   }
 
   const buckets: TokenBuckets = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+  let reasoningTokens = 0;
   let totalCostInr = 0;
   let windowStartMs = Number.POSITIVE_INFINITY;
 
   const modelMap = new Map<string, { tokens: number; costInr: number }>();
-  const projectMap = new Map<string, { tokens: number; costInr: number; models: Set<string> }>();
+  const projectMap = new Map<
+    string,
+    { tokens: number; costInr: number; models: Set<string>; lastTurnMs: number }
+  >();
 
   for (const e of unique) {
     const sum = eventTotal(e);
+    const reasoning = e.reasoningOutputTokens ?? 0;
     buckets.input += e.inputTokens;
     buckets.output += e.outputTokens;
     buckets.cacheCreation += e.cacheCreationTokens;
     buckets.cacheRead += e.cacheReadTokens;
+    reasoningTokens += reasoning;
 
+    // OpenAI / Codex bill reasoning tokens at the output rate, so we fold
+    // them into the output bucket for cost calculation only. The
+    // ProviderSummary.reasoningTokens field stays separate for UI display.
     const cost = costInr(
       {
         input: e.inputTokens,
-        output: e.outputTokens,
+        output: e.outputTokens + reasoning,
         cacheCreation: e.cacheCreationTokens,
         cacheRead: e.cacheReadTokens,
       },
@@ -121,10 +161,16 @@ export function aggregateClaude(events: UsageEvent[], now = Date.now()): ClaudeS
 
     const proj = basename(e.projectPath);
     if (proj) {
-      const p = projectMap.get(proj) ?? { tokens: 0, costInr: 0, models: new Set<string>() };
+      const p = projectMap.get(proj) ?? {
+        tokens: 0,
+        costInr: 0,
+        models: new Set<string>(),
+        lastTurnMs: 0,
+      };
       p.tokens += sum;
       p.costInr += cost;
       if (e.model) p.models.add(e.model);
+      if (ts > p.lastTurnMs) p.lastTurnMs = ts;
       projectMap.set(proj, p);
     }
   }
@@ -139,6 +185,7 @@ export function aggregateClaude(events: UsageEvent[], now = Date.now()): ClaudeS
       tokens: v.tokens,
       costInr: v.costInr,
       models: [...v.models],
+      lastTurnMs: v.lastTurnMs,
     }))
     .sort((a, b) => b.tokens - a.tokens);
 
@@ -154,8 +201,11 @@ export function aggregateClaude(events: UsageEvent[], now = Date.now()): ClaudeS
   const latest = sorted[0];
 
   return {
+    provider,
+    displayName,
     tokensWindow: buckets.input + buckets.output + buckets.cacheCreation + buckets.cacheRead,
     buckets,
+    reasoningTokens,
     costInr: totalCostInr,
     windowStartMs,
     resetsAtMs: windowStartMs + FIVE_HOURS_MS,
@@ -166,6 +216,11 @@ export function aggregateClaude(events: UsageEvent[], now = Date.now()): ClaudeS
     currentModel: latest?.model ?? null,
     latestAgeMs: latest ? now - latest.ts.getTime() : null,
   };
+}
+
+/** Backward-compat alias for callers that still expect the Claude-named name. */
+export function aggregateClaude(events: UsageEvent[], now = Date.now()): ClaudeSummary {
+  return aggregateProvider(events, { provider: 'claude', displayName: 'Claude Code', now });
 }
 
 export function sessionProgressPct(windowStartMs: number | null, now = Date.now()): number {

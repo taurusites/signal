@@ -1,0 +1,82 @@
+/* signal — claude tank
+   Pixel-art aquarium aesthetic. Deep ocean palette with neon accents.
+   image-rendering: pixelated everywhere so SVG sprites stay sharp at scale. */
+
+:root {
+  --bg-0: #050811;
+  --bg-1: #0a0d18;
+  --bg-2: #12172a;
+  --water-top: #0c2a4a;
+  --water-bot: #051528;
+  --neon-cyan: #5af0ff;
+  --neon-pink: #ff5af0;
+  --neon-lime: #c0ff00;
+  --neon-yellow: #ffd700;
+  --crab-red: #d63b3b;
+  --crab-light: #f56565;
+  --crab-dark: #a02b2b;
+  --text: #e9efff;
+  --dim: #8794b0;
+  --warn: #ffb84d;
+  --crit: #ff5a6e;
+  --ok: #6fff8a;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  background: var(--bg-0);
+  color: var(--text);
+  font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 14px;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+img,
+svg {
+  image-rendering: pixelated;
+}
+
+/* Scanline overlay across the whole UI — retro CRT feel without being unreadable */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(255, 255, 255, 0.018) 2px,
+    rgba(255, 255, 255, 0.018) 3px
+  );
+  z-index: 9999;
+}
+
+/* Soft vignette on the corners */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
+  z-index: 9998;
+}
