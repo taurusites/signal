@@ -75,6 +75,11 @@ export class EventStore {
   constructor(path: string) {
     this.db = new Database(path, { create: true });
     this.db.exec('PRAGMA journal_mode = WAL');
+    // When two pollers (Claude + Codex) try to write at the exact same tick,
+    // WAL still serializes writes — without busy_timeout the loser of the
+    // race fails immediately with SQLITE_BUSY. 5s is overkill on a healthy
+    // box but it costs nothing if there's no contention.
+    this.db.exec('PRAGMA busy_timeout = 5000');
     this.migrate();
   }
 
