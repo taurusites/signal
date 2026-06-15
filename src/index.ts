@@ -16,7 +16,7 @@ import { runStatus } from './ui/status';
 import { App } from './ui/tui/App';
 
 const program = new Command();
-program.name('signal').description('Multi-provider AI usage monitor').version('0.1.0');
+program.name('signal').description('Multi-provider AI usage monitor').version('0.2.0');
 
 program
   .command('status')
