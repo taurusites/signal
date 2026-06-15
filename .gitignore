@@ -7,3 +7,6 @@ dist/
 tokemon-ref/
 
 .claude/settings.local.json
+
+# Internal product planning — not for the public repo
+docs/superpowers/

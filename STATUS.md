@@ -85,7 +85,7 @@ Three layers, one-way imports:
 ## Resuming after a break
 
 ```bash
-cd "/Users/tester/Downloads/Token Monitor"
+cd "<repo>"
 git checkout main
 bun install
 bun run lint

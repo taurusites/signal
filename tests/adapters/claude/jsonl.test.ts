@@ -26,7 +26,7 @@ describe('parseClaudeSession', () => {
 
 describe('decodeProjectDirName', () => {
   test('decodes dash-encoded project paths', () => {
-    expect(decodeProjectDirName('-Users-shandar-signal')).toBe('/Users/shandar/signal');
+    expect(decodeProjectDirName('-Users-tester-signal')).toBe('/Users/tester/signal');
   });
 
   test('returns name unchanged if no leading dash', () => {
