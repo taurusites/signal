@@ -22,7 +22,11 @@ export interface SignalConfig {
 }
 
 const DEFAULTS: SignalConfig = {
-  enabledProviders: ['claude'],
+  // Both providers on by default. detect() is cheap (a single existsSync
+  // each); an enabled-but-not-installed provider just reports "not detected"
+  // in doctor and contributes nothing to the snapshot. Opting out is still
+  // possible by editing enabledProviders in config.toml.
+  enabledProviders: ['claude', 'codex'],
   hardware: { sampleIntervalMs: 2000, useSystemInformation: true },
   claude: { useOauth: false },
   dbPath: join(homedir(), '.signal', 'events.db'),
