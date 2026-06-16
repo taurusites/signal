@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseCodexSession } from '../../../src/adapters/codex/jsonl';
+import { findCodexSessionFiles, parseCodexSession } from '../../../src/adapters/codex/jsonl';
 
 const FIXTURES = join(import.meta.dir, '../../fixtures/codex');
 
@@ -44,5 +46,41 @@ describe('parseCodexSession', () => {
   test('reasoning_output_tokens is captured', () => {
     const events = parseCodexSession(join(FIXTURES, 'session-malformed.jsonl'));
     expect(events[0]?.reasoningOutputTokens).toBe(10);
+  });
+});
+
+describe('findCodexSessionFiles', () => {
+  // Regression for the Windows/NTFS bug: a session whose .jsonl file mtime is
+  // fresh but whose parent day-dir mtime is stale (because no entries have been
+  // added/removed since the file was created — Codex just keeps appending)
+  // must still be returned. NTFS doesn't bump directory mtime on file content
+  // updates; older logic that pruned by directory mtime silently dropped
+  // active sessions whose first turn was older than the cutoff.
+  test('returns fresh-file sessions even when the parent dir mtime is stale', () => {
+    const root = join(tmpdir(), `codex-walk-${Date.now()}-${Math.random()}`);
+    const dayDir = join(root, '2026', '06', '16');
+    mkdirSync(dayDir, { recursive: true });
+    const sessionFile = join(dayDir, 'rollout-active.jsonl');
+    writeFileSync(sessionFile, '{"type":"session_meta","payload":{}}\n');
+
+    const now = Date.now();
+    // File mtime: 30 minutes ago (fresh — within a 5h cutoff)
+    const fileTimeSec = (now - 30 * 60_000) / 1000;
+    utimesSync(sessionFile, fileTimeSec, fileTimeSec);
+    // Day dir mtime: 6 hours ago (stale — older than a 5h cutoff)
+    const dirTimeSec = (now - 6 * 60 * 60_000) / 1000;
+    utimesSync(dayDir, dirTimeSec, dirTimeSec);
+    utimesSync(join(root, '2026', '06'), dirTimeSec, dirTimeSec);
+    utimesSync(join(root, '2026'), dirTimeSec, dirTimeSec);
+    utimesSync(root, dirTimeSec, dirTimeSec);
+
+    const cutoff = now - 5 * 60 * 60_000;
+    const found = findCodexSessionFiles(cutoff, root);
+
+    try {
+      expect(found).toContain(sessionFile);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

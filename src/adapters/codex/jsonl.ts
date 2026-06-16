@@ -73,10 +73,15 @@ function walkRecursive(dir: string, sinceMs: number, out: string[]): void {
       continue;
     }
     if (st.isDirectory()) {
-      // Whole-directory pruning: if no file inside this dir has been touched
-      // since the cutoff, the directory's mtime would also be older. We don't
-      // recurse those.
-      if (st.mtimeMs < sinceMs) continue;
+      // We used to prune directories whose mtime was older than `sinceMs`.
+      // That broke on NTFS (Windows): directory mtime updates when entries
+      // are added/removed, but NOT when files inside are modified. Codex
+      // creates one rollout-*.jsonl per session and appends to it for the
+      // session's lifetime — a 6h-old session with active writes would have
+      // a fresh file mtime but a stale directory mtime, and we'd skip the
+      // whole day-dir. The Y/M/D tree under ~/.codex/sessions/ is shallow
+      // and cheap to walk; we now recurse unconditionally and filter at the
+      // file level only.
       walkRecursive(full, sinceMs, out);
     } else if (entry.endsWith('.jsonl') && st.mtimeMs >= sinceMs) {
       out.push(full);
