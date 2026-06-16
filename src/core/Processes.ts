@@ -1,7 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { platform } from 'node:os';
 import { basename } from 'node:path';
 import type { ProviderId } from './types';
+
+const IS_WINDOWS = platform() === 'win32';
 
 // Detect running coding-agent CLI instances on this machine. Uses `pgrep -f`
 // to find processes whose argv contains a standalone agent token (so the
@@ -119,6 +122,7 @@ function isLikelyClaudeCli(command: string): boolean {
 }
 
 export function detectClaudeCliInstances(): ClaudeCliInstance[] {
+  if (IS_WINDOWS) return detectWindowsCli('claude', 'claude');
   return groupByCwd(pgrepRegex(CLAUDE_REGEX), isLikelyClaudeCli, 'claude');
 }
 
@@ -136,7 +140,81 @@ function isLikelyCodexCli(command: string): boolean {
 }
 
 export function detectCodexCliInstances(): ClaudeCliInstance[] {
+  if (IS_WINDOWS) return detectWindowsCli('codex', 'codex');
   return groupByCwd(pgrepRegex(CODEX_REGEX), isLikelyCodexCli, 'codex');
+}
+
+// ── Windows detection ─────────────────────────────────────────────────────
+//
+// macOS/Linux use pgrep + lsof, which don't exist on Windows. Reading another
+// process's CWD on Windows requires reading its PEB via NtQueryInformationProcess,
+// which needs P/Invoke or admin — neither is appropriate here. So we trade
+// per-CWD grouping for a single aggregate entry per provider showing how many
+// PIDs are alive and the oldest start time. Honest about the limitation, still
+// useful as a "yes, you have N claude sessions running right now" signal.
+
+function detectWindowsCli(tokenLowercase: string, provider: ProviderId): ClaudeCliInstance[] {
+  // Filter on Win32_Process.CommandLine matching the agent token. Permissive
+  // by design — false-positive bloat is cheap; a missed real process is what
+  // hurts. PowerShell's -match is case-insensitive by default.
+  const script = `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine -match '\\\\${tokenLowercase}(\\.exe|\\.cmd|\\.bat|\\.ps1)?(\\s|$|"|'')' -and $_.CommandLine -notmatch 'signal.*serve' } | Select-Object ProcessId, CreationDate | ConvertTo-Json -Compress`;
+  let out: string;
+  try {
+    out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    return [];
+  }
+  const trimmed = out.trim();
+  if (!trimmed) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return [];
+  }
+  // Single match returns an object; multiple → array. Normalize.
+  const rows = (Array.isArray(parsed) ? parsed : [parsed]) as Array<{
+    ProcessId?: number;
+    CreationDate?: string | { value?: string };
+  }>;
+  const pids = rows
+    .map((r) => r.ProcessId)
+    .filter((p): p is number => typeof p === 'number' && p > 0)
+    .sort((a, b) => a - b);
+  if (pids.length === 0) return [];
+
+  const starts = rows
+    .map((r) => parseWmiDate(r.CreationDate))
+    .filter((n): n is number => n !== null);
+
+  return [
+    {
+      provider,
+      // CWD isn't reachable on Windows without elevation; show the count
+      // instead so the UI has something meaningful to render in that slot.
+      cwd: `${pids.length} ${provider} process${pids.length === 1 ? '' : 'es'}`,
+      project: provider,
+      pids,
+      startedAt: starts.length > 0 ? Math.min(...starts) : null,
+    },
+  ];
+}
+
+function parseWmiDate(d: string | { value?: string } | undefined): number | null {
+  if (!d) return null;
+  // CIM serializes either as the raw WMI string "yyyymmddhhmmss.ffffff±zzz"
+  // or wrapped in {value: "..."}; handle both.
+  const s = typeof d === 'string' ? d : d.value;
+  if (!s) return null;
+  const m = s.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
+  if (!m || !m[1] || !m[2] || !m[3] || !m[4] || !m[5] || !m[6]) return null;
+  const t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  return Number.isFinite(t) ? t : null;
 }
 
 // ── Aggregate detector ────────────────────────────────────────────────────
